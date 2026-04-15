@@ -18,13 +18,13 @@ for i, nombre in enumerate(nombres_botones):
     boton = tk.Button(
         barra, 
         text=nombre, 
-        font=("Arial", 10, "bold"), 
+        font=("Arial", 10), 
         relief="flat",   # Sin relieve
         bd=0,            # Sin borde 
         bg="white",      
         padx=10,
         pady=5,
     )
-    # padx=5 aquí añade un margen EXTERNO de 5 píxeles entre cada botón
+    # padx=5 aquí añade un margen de 5 píxeles entre cada botón y pady=5 de arriba
     boton.grid(row=0, column=i, padx=5, pady=5 )
 ventana.mainloop()
