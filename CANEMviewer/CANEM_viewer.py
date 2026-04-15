@@ -4,27 +4,40 @@ from tkinter import ttk
 ventana = tk.Tk()
 ventana.title("CANEM VIEWER")
 ventana.geometry("1400x800")
+ventana.resizable(False, False)
 ventana.configure(bg="#DDD")
 
-# --- BARRA SUPERIOR (BOTONES) ---
-barra = tk.Frame(ventana, bg="#DDD")
-barra.grid(row=0, column=0, sticky="ew")
+# --- ESTIL ---
+style = ttk.Style()
+style.theme_use("clam")  # Important per poder modificar colors
 
-# Lista con los nombres de los botones de la imagen
-nombres_botones = ["FUNCIONS", "TEMPERATURES", "SDC", "HV", "LV"]
+# Configuració general del Notebook
+style.configure("TNotebook", background="#DDD", borderwidth=0)
 
-# Bucle para crear y colocar cada botón
-for i, nombre in enumerate(nombres_botones):
-    boton = tk.Button(
-        barra, 
-        text=nombre, 
-        font=("Arial", 10), 
-        relief="flat",   # Sin relieve
-        bd=0,            # Sin borde 
-        bg="white",      
-        padx=10,
-        pady=5,
-    )
-    # padx=5 aquí añade un margen de 5 píxeles entre cada botón y pady=5 de arriba
-    boton.grid(row=0, column=i, padx=5, pady=5 )
+# Configuració de les pestanyes
+style.configure(
+    "TNotebook.Tab",
+    font=("Arial", 11, "bold"),
+    background="#CCC",
+)
+
+# Comportament segons estat
+style.map(
+    "TNotebook.Tab",
+    background=[("selected", "white"), ("!selected", "#CCC")],
+    foreground=[("selected", "#0a594d"), ("!selected", "black")],
+)
+
+# --- NOTEBOOK (PESTANYES) ---
+notebook = ttk.Notebook(ventana)
+notebook.pack(fill="both", expand=True)
+
+# Llista de pestanyes
+llista_finestres = ["General", "Temperatures", "SDC", "HV", "LV"]
+
+# Crear pestanyes
+for nombre in llista_finestres:
+    frame = tk.Frame(notebook, bg="white")
+    notebook.add(frame, text=nombre)
+
 ventana.mainloop()
