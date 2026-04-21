@@ -9,19 +9,16 @@ ventana.configure(bg="#DDD")
 
 # --- ESTIL ---
 style = ttk.Style()
-style.theme_use("clam")  # Important per poder modificar colors
+style.theme_use("clam")
 
-# Configuració general del Notebook
 style.configure("TNotebook", background="#DDD", borderwidth=0)
 
-# Configuració de les pestanyes
 style.configure(
     "TNotebook.Tab",
     font=("Arial", 11, "bold"),
     background="#CCC",
 )
 
-# Comportament segons estat
 style.map(
     "TNotebook.Tab",
     background=[("selected", "white"), ("!selected", "#CCC")],
@@ -32,24 +29,25 @@ style.map(
 notebook = ttk.Notebook(ventana)
 notebook.pack(fill="both", expand=True)
 
-# --- PESTAÑAS ---
-general_frame = tk.Frame(notebook, bg="white")
-temperatures_frame = tk.Frame(notebook, bg="white")
-sdc_frame = tk.Frame(notebook, bg="white")
-hv_frame = tk.Frame(notebook, bg="white")
-lv_frame = tk.Frame(notebook, bg="white")
+# --- DEFINICIÓ DE PESTANYES ---
+tabs = ["General", "Temperatures", "SDC", "HV", "LV"]
 
-notebook.add(general_frame, text="General")
-notebook.add(temperatures_frame, text="Temperatures")
-notebook.add(sdc_frame, text="SDC")
-notebook.add(hv_frame, text="HV")
-notebook.add(lv_frame, text="LV")
+frames = {}
+
+for tab in tabs:
+    frame = tk.Frame(notebook, bg="white")
+    notebook.add(frame, text=tab)
+    frames[tab] = frame  # guardem referència per ús posterior
 
 # --- TREEVIEWS GENERAL ---
-titulos = ["REAR ECU", "HVAB", "HVDB", "TSAL GREEN", "SDC RESET"]
+titulos = ["FRONT ECU", "REAR ECU", "HVAB", "HVDB", "TSAL GREEN", "SDC RESET", "BSPD", "BMS", "IMD","INVERTER"]
+
+general_frame = frames["General"]
 
 # layout grid centrado
-for col in range(6):
+num_cols = 5  # 5 a dalt, 5 a baix
+
+for col in range(num_cols):
     general_frame.columnconfigure(col, weight=1)
 
 general_frame.rowconfigure(0, weight=1)
@@ -66,19 +64,15 @@ for titulo in titulos:
     )
 
     tree.heading(titulo, text=titulo)
-    tree.column(titulo, width=160, anchor="center")
+    tree.column(titulo, width=100, stretch=True, anchor="center")
 
     trees.append(tree)
 
-# --- POSICIÓN (2 arriba / 3 abajo) ---
+# --- POSICIONAMENT AUTOMÀTIC ---
+for i, tree in enumerate(trees):
+    row = i // num_cols
+    col = i % num_cols
 
-# arriba
-trees[0].grid(row=0, column=2, pady=40)
-trees[1].grid(row=0, column=4, pady=40)
-
-# abajo
-trees[2].grid(row=1, column=1, pady=40)
-trees[3].grid(row=1, column=3, pady=40)
-trees[4].grid(row=1, column=5, pady=40)
+    tree.grid(row=row, column=col, pady=10, padx=10, sticky="nsew")
 
 ventana.mainloop()
