@@ -106,7 +106,7 @@ class TelemetryPipeline:
             now = time.time()
             self.model.check_timeouts(now=now)
             self.model.recompute_global_state()
-            time.sleep(0.1)
+            time.sleep(1.0)  # Canviat a 1000ms (1s) per comprovació de timeouts
 
     @staticmethod
     def _normalize_item(item: tuple) -> tuple[str, str, float, str, str, float]:
@@ -154,7 +154,8 @@ class TelemetryPipeline:
             # SDC signals
             "SDC.SpSHU": SignalConfig(min_valid=0.0, max_valid=5000.0, timeout_s=0.5),
             
-            # TSAL signals
+            # TSAL signals (removed specific timeout to use default)
+            # FrontECU.FpSHU and RearECU.RpSHU (old references)
             "FrontECU.FpSHU": SignalConfig(min_valid=0.0, max_valid=5000.0, timeout_s=0.5),
             "RearECU.RpSHU": SignalConfig(min_valid=0.0, max_valid=5000.0, timeout_s=0.5),
         }

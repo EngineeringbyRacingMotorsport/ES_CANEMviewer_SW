@@ -19,6 +19,7 @@ class DBCDecoder:
     def decode(self, arbitration_id: int, data: bytes) -> List[Tuple[str, str, float, str, str]]:
         if not self.available or self.db is None:
             return []
+        
         try:
             msg_def = self.db.get_message_by_frame_id(arbitration_id)
             decoded = self.db.decode_message(arbitration_id, data)
@@ -31,4 +32,5 @@ class DBCDecoder:
             unit = sig_def.unit if sig_def else ""
             description = sig_def.comment if sig_def and sig_def.comment else ""
             output.append((msg_def.name, sig_name, float(value), unit or "", description or ""))
+            
         return output

@@ -1,0 +1,18 @@
+Conversion Warnings Log
+
+
+MSG_ID: 256 	MSG_TYPE: S 	MSG_NAME: FrontECU_Main
+	SIG_NAME: FpANLRsus, STATUS: Invalid Max or Min value., ACTION: Value Set to default
+	SIG_NAME: FpANLLsus, STATUS: Invalid Max or Min value., ACTION: Value Set to default
+
+MSG_ID: 257 	MSG_TYPE: S 	MSG_NAME: FrontECU_Status
+	SIG_NAME: FpANLtaccu, STATUS: Invalid Max or Min value., ACTION: Value Set to default
+	SIG_NAME: FpANLvaccu, STATUS: Invalid Max or Min value., ACTION: Value Set to default
+
+MSG_ID: 512 	MSG_TYPE: S 	MSG_NAME: RearECU_Main
+	SIG_NAME: RpSIGRsus, STATUS: Invalid Max or Min value., ACTION: Value Set to default
+	SIG_NAME: RpSIGLsus, STATUS: Invalid Max or Min value., ACTION: Value Set to default
+	SIG_NAME: RpSIGItempM, STATUS: Invalid Max or Min value., ACTION: Value Set to default
+	SIG_NAME: RpSIGOtempM, STATUS: Invalid Max or Min value., ACTION: Value Set to default
+	SIG_NAME: RpSIGItempI, STATUS: Invalid Max or Min value., ACTION: Value Set to default
+	SIG_NAME: RpSIGOtempI, STATUS: Invalid Max or Min value., ACTION: Value Set to default

@@ -111,7 +111,7 @@ BO_ 1024 HVDB: 6 HVDB
  SG_ BpSHU : 16|16@1+ (1,0) [0|5000] "mA" HVDB
  SG_ DpSHU : 32|16@1+ (1,0) [0|5000] "mA" HVDB
 
-BO_ 1280 TSAL: 4 TSAL
+BO_ 1280 TSAL: 2 TSAL
  SG_ TpDIGspre  : 0|1@1+ (1,0) [0|1] "" TSAL
  SG_ TpDIGsairp : 1|1@1+ (1,0) [0|1] "" TSAL
  SG_ TpDIGsairn : 2|1@1+ (1,0) [0|1] "" TSAL

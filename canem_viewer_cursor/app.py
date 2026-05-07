@@ -10,7 +10,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Formula Student EV telemetry viewer")
     parser.add_argument("--dbc", default="dbc/EM06CAN.dbc")
     parser.add_argument("--channel", type=int, default=0)
-    parser.add_argument("--bitrate", type=int, default=500000)
+    parser.add_argument("--bitrate", type=int, default=250000)
     parser.add_argument("--app-name", default="CANalyzer")
     parser.add_argument("--no-vector", action="store_true", help="Run without Vector hardware (show all DBC signals in gray)")
     return parser.parse_args()

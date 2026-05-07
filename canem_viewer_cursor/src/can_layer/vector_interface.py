@@ -25,16 +25,22 @@ class VectorCANReader(threading.Thread):
     def run(self) -> None:
         import can
 
-        bus = can.interface.Bus(
-            bustype="vector",
-            channel=self.channel,
-            bitrate=self.bitrate,
-            app_name=self.app_name,
-        )
+        try:
+            bus = can.interface.Bus(
+                bustype="vector",
+                channel=self.channel,
+                bitrate=self.bitrate,
+                app_name=self.app_name,
+            )
+        except Exception as e:
+            print(f"VectorCANReader: Error creant bus: {e}")
+            return
+
         while not self.stop_event.is_set():
-            msg = bus.recv(timeout=0.02)
+            msg = bus.recv(timeout=0.05)  # Canviat a 50ms
             if msg is None:
                 continue
+            
             try:
                 self.output_queue.put_nowait(msg)
             except Exception:
