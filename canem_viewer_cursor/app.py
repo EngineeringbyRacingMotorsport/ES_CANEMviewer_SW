@@ -8,24 +8,24 @@ from src.ui.main_window import MainWindow
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Formula Student EV telemetry viewer")
-    parser.add_argument("--mode", choices=["mock", "vector"], default="mock")
-    parser.add_argument("--dbc", default="dbc/formula_student.dbc")
+    parser.add_argument("--dbc", default="dbc/EM06CAN.dbc")
     parser.add_argument("--channel", type=int, default=0)
     parser.add_argument("--bitrate", type=int, default=500000)
     parser.add_argument("--app-name", default="CANalyzer")
+    parser.add_argument("--no-vector", action="store_true", help="Run without Vector hardware (show all DBC signals in gray)")
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
-    model = VehicleModel()
+    model = VehicleModel(dbc_path=args.dbc)
     pipeline = TelemetryPipeline(
         model=model,
-        mode=args.mode,
         dbc_path=args.dbc,
         vector_channel=args.channel,
         vector_bitrate=args.bitrate,
         vector_app_name=args.app_name,
+        no_vector=args.no_vector,
     )
     pipeline.start()
 

@@ -5,7 +5,7 @@ import time
 from queue import Empty, Queue
 from typing import Optional
 
-from src.can_layer.vector_interface import MockCANReader, VectorCANReader
+from src.can_layer.vector_interface import MockCANReader, NoVectorReader, VectorCANReader
 from src.decoder.dbc_decoder import DBCDecoder
 from src.model.vehicle_model import SignalConfig, VehicleModel
 from src.persistence.saver import PersistenceWorker
@@ -16,14 +16,14 @@ class TelemetryPipeline:
     def __init__(
         self,
         model: VehicleModel,
-        mode: str,
         dbc_path: str,
         vector_channel: int,
         vector_bitrate: int,
         vector_app_name: str,
+        no_vector: bool = False,
     ) -> None:
         self.model = model
-        self.mode = mode
+        self.no_vector = no_vector
         self.raw_queue: Queue = Queue(maxsize=5000)
         self.decoded_queue: Queue = Queue(maxsize=5000)
         self.save_queue: Queue = Queue(maxsize=20)
@@ -37,15 +37,16 @@ class TelemetryPipeline:
         self.persistence_thread = PersistenceWorker(model=self.model, save_queue=self.save_queue, stop_event=self.stop_event)
 
     def _build_reader(self, channel: int, bitrate: int, app_name: str):
-        if self.mode == "vector":
-            return VectorCANReader(
-                output_queue=self.raw_queue,
-                stop_event=self.stop_event,
-                channel=channel,
-                bitrate=bitrate,
-                app_name=app_name,
-            )
-        return MockCANReader(output_queue=self.raw_queue, stop_event=self.stop_event)
+        if self.no_vector:
+            # Create a dummy reader that doesn't try to connect to Vector hardware
+            return NoVectorReader(output_queue=self.raw_queue, stop_event=self.stop_event)
+        return VectorCANReader(
+            output_queue=self.raw_queue,
+            stop_event=self.stop_event,
+            channel=channel,
+            bitrate=bitrate,
+            app_name=app_name,
+        )
 
     def start(self) -> None:
         self.reader.start()
@@ -68,13 +69,6 @@ class TelemetryPipeline:
             try:
                 item = self.raw_queue.get(timeout=0.05)
             except Empty:
-                continue
-
-            if self.mode == "mock":
-                try:
-                    self.decoded_queue.put_nowait(item)
-                except Exception:
-                    pass
                 continue
 
             frame = item
@@ -133,10 +127,35 @@ class TelemetryPipeline:
     def _config_for(pcb: str, sig: str) -> SignalConfig:
         key = f"{pcb}.{sig}"
         presets = {
-            "BMS.pack_voltage": SignalConfig(min_valid=450.0, max_valid=600.0, timeout_s=0.5),
-            "BMS.pack_temp": SignalConfig(min_valid=-10.0, max_valid=65.0, timeout_s=0.5),
-            "INV.motor_temp": SignalConfig(min_valid=-20.0, max_valid=120.0, timeout_s=0.5),
-            "IMU.lat_acc": SignalConfig(min_valid=-5.0, max_valid=5.0, timeout_s=0.5),
-            "VCU.traction_enable": SignalConfig(min_valid=0.0, max_valid=1.0, timeout_s=0.5),
+            # FrontECU signals
+            "FrontECU.FpANLvaccu": SignalConfig(min_valid=10.0, max_valid=500.0, timeout_s=0.5),
+            "FrontECU.FpANLtaccu": SignalConfig(min_valid=-40.0, max_valid=150.0, timeout_s=0.5),
+            "FrontECU.FpDIGvel": SignalConfig(min_valid=0.0, max_valid=255.0, timeout_s=0.5),
+            "FrontECU.FpANLRpot": SignalConfig(min_valid=0.0, max_valid=100.0, timeout_s=0.5),
+            "FrontECU.FpANLLpot": SignalConfig(min_valid=0.0, max_valid=100.0, timeout_s=0.5),
+            "FrontECU.FpANLbrake": SignalConfig(min_valid=0.0, max_valid=200.0, timeout_s=0.5),
+            
+            # RearECU signals
+            "RearECU.RpSIGItempM": SignalConfig(min_valid=-40.0, max_valid=150.0, timeout_s=0.5),
+            "RearECU.RpSIGOtempM": SignalConfig(min_valid=-40.0, max_valid=150.0, timeout_s=0.5),
+            "RearECU.RpSIGItempI": SignalConfig(min_valid=-40.0, max_valid=150.0, timeout_s=0.5),
+            "RearECU.RpSIGOtempI": SignalConfig(min_valid=-40.0, max_valid=150.0, timeout_s=0.5),
+            "RearECU.RpSIGRspeed": SignalConfig(min_valid=0.0, max_valid=255.0, timeout_s=0.5),
+            "RearECU.RpSIGLspeed": SignalConfig(min_valid=0.0, max_valid=255.0, timeout_s=0.5),
+            "RearECU.RpSIGlvs": SignalConfig(min_valid=0.0, max_valid=100.0, timeout_s=0.5),
+            
+            # HVDB signals
+            "HVDB.BpSHU": SignalConfig(min_valid=0.0, max_valid=5000.0, timeout_s=0.5),
+            "HVDB.DpSHU": SignalConfig(min_valid=0.0, max_valid=5000.0, timeout_s=0.5),
+            
+            # HVAB signals
+            "HVAB.ApSHU": SignalConfig(min_valid=0.0, max_valid=5000.0, timeout_s=0.5),
+            
+            # SDC signals
+            "SDC.SpSHU": SignalConfig(min_valid=0.0, max_valid=5000.0, timeout_s=0.5),
+            
+            # TSAL signals
+            "FrontECU.FpSHU": SignalConfig(min_valid=0.0, max_valid=5000.0, timeout_s=0.5),
+            "RearECU.RpSHU": SignalConfig(min_valid=0.0, max_valid=5000.0, timeout_s=0.5),
         }
         return presets.get(key, SignalConfig(timeout_s=0.8))

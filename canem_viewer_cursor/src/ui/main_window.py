@@ -15,7 +15,7 @@ class MainWindow(tk.Tk):
         super().__init__()
         self.model = model
         self.pipeline = pipeline
-        self.title("CANEM Viewer - Formula Student EV")
+        self.title("CANEM Viewer - EUSS Motorsport")
         self.geometry("1400x800")
         self.minsize(1400, 800)
         self.maxsize(1400, 800)

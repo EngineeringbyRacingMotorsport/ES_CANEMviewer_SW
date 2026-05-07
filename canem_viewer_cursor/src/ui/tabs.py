@@ -15,19 +15,6 @@ TEXT_MUTED = "#bdbdbd"
 
 
 class GeneralTab(tk.Frame):
-    PCB_TITLES = [
-        "FRONT ECU",
-        "REAR ECU",
-        "HVAB",
-        "HVDB",
-        "TSAL GREEN",
-        "SDC RESET",
-        "BSPD",
-        "BMS",
-        "IMD",
-        "INVERTER",
-    ]
-
     def __init__(self, parent: tk.Widget, model: VehicleModel):
         super().__init__(parent, bg=DARK_BG)
         self.model = model
@@ -69,15 +56,24 @@ class GeneralTab(tk.Frame):
 
         self.grid_bodies = {}
         self._grid_widget_rows = {}
-        num_cols = 5
-        num_rows = 2
+        
+        # Get PCBs from model (initialized from DBC)
+        with self.model.lock():
+            pcb_names = list(self.model.vehicle.pcbs.keys())
+        
+        if not pcb_names:
+            # Fallback to default titles if no PCBs loaded
+            pcb_names = ["NO DATA"]
+        
+        num_cols = min(5, len(pcb_names))
+        num_rows = (len(pcb_names) + num_cols - 1) // num_cols
 
         for col in range(num_cols):
             self.main_container.columnconfigure(col, weight=1)
         for row in range(num_rows):
             self.main_container.rowconfigure(row, weight=1)
 
-        for i, title in enumerate(self.PCB_TITLES):
+        for i, title in enumerate(pcb_names):
             row, col = i // num_cols, i % num_cols
             container = tk.Frame(self.main_container, bg=CARD_BG, highlightbackground=CARD_BORDER, highlightthickness=1)
             container.grid(row=row, column=col, sticky="nsew", padx=1, pady=1)
@@ -160,15 +156,32 @@ class GeneralTab(tk.Frame):
         content.grid_columnconfigure(0, weight=1)
         content.grid_columnconfigure(1, weight=2)
 
-        # Panell Esquerre (Llista de senyals)
+        # Panell Esquerre (Llista de senyals) amb scrollbar
         left_panel = tk.Frame(content, bg=bg_card, highlightbackground=border_color, highlightthickness=1)
         left_panel.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
-        left_panel.grid_rowconfigure(0, weight=1)
         left_panel.grid_columnconfigure(0, weight=1)
+        left_panel.grid_columnconfigure(1, weight=0) # La columna de la scrollbar no s'expandeix
 
-        self.detail_table_body = tk.Frame(left_panel, bg=bg_card)
-        self.detail_table_body.grid(row=0, column=0, sticky="nsew", padx=8, pady=8)
+        # Crear scrollbar directament al panel
+        scrollbar = tk.Scrollbar(left_panel, orient="vertical")
+        scrollbar.grid(row=0, column=1, sticky="ns") # Sense padding per estar a prop
+        
+        # Configurar el canvas per fer scroll
+        canvas = tk.Canvas(left_panel, bg=bg_card, highlightthickness=0, yscrollcommand=scrollbar.set)
+        canvas.grid(row=0, column=0, sticky="nsew", padx=(0, 0), pady=2) # Sense padding horitzontal
+        scrollbar.config(command=canvas.yview)
+        
+        self.detail_table_body = tk.Frame(canvas, bg=bg_card)
+        canvas_window = canvas.create_window((0, 0), window=self.detail_table_body, anchor="nw")
+        
         self.detail_rows_widgets = []
+
+        # Configurar el scroll per actualitzar-se quan canviï el contingut
+        def configure_scroll_region(e=None):
+            canvas.configure(scrollregion=canvas.bbox("all"))
+        
+        self.detail_table_body.bind("<Configure>", configure_scroll_region)
+        canvas.bind("<Configure>", configure_scroll_region)
 
         # Panell Dret (Detalls i Gràfica)
         right_panel = tk.Frame(content, bg=bg_card, highlightbackground=border_color, highlightthickness=1)
@@ -222,7 +235,7 @@ class GeneralTab(tk.Frame):
     def _update_grid(self) -> None:
         with self.model.lock():
             pcbs = self.model.vehicle.pcbs
-            for title in self.PCB_TITLES:
+            for title in list(self.grid_bodies.keys()):
                 body = self.grid_bodies.get(title)
                 if body is None:
                     continue
@@ -244,9 +257,36 @@ class GeneralTab(tk.Frame):
     def _build_grid_rows(self, pcb: PCBState | None) -> list[tuple[str, str, str, str]]:
         if pcb is None:
             return [("No signals", "-", "-", "TIMEOUT")]
+        
+        # Define priority order: TIMEOUT (3) > ERROR (2) > WARNING (1) > OK (0)
+        PRIORITY_ORDER = {"TIMEOUT": 3, "ERROR": 2, "WARNING": 1, "OK": 0}
+        
+        # Group signals by status and sort alphabetically within each group
+        status_groups = {"TIMEOUT": [], "ERROR": [], "WARNING": [], "OK": []}
+        for signal in pcb.signals.values():
+            status_groups[signal.status].append(signal)
+        
+        # Sort signals alphabetically within each status group
+        for status in status_groups:
+            status_groups[status].sort(key=lambda s: s.name.lower())
+        
+        # Build ordered list by priority
+        ordered_signals = []
+        for status in ["TIMEOUT", "ERROR", "WARNING", "OK"]:
+            ordered_signals.extend(status_groups[status])
+        
+        # Limit to available space (show max 9 signals in grid view)
+        max_signals = 9
         rows: list[tuple[str, str, str, str]] = []
-        for signal in list(pcb.signals.values())[:6]:
-            rows.append((signal.name, f"{signal.value:.2f}", signal.unit, signal.status))
+        
+        for signal in ordered_signals[:max_signals]:
+            # Show "--" for timeout signals instead of actual value
+            if signal.status == "TIMEOUT":
+                value = "--"
+            else:
+                value = f"{signal.value:.2f}"
+            rows.append((signal.name, value, signal.unit, signal.status))
+        
         if not rows:
             rows.append(("No signals", "-", "-", "TIMEOUT"))
         return rows
@@ -254,9 +294,31 @@ class GeneralTab(tk.Frame):
     def _build_detail_rows(self, pcb: PCBState | None) -> list[tuple[str, str, str, str]]:
         if pcb is None:
             return [("NO_DATA", "-", "-", "TIMEOUT")]
-        rows: list[tuple[str, str, str, str]] = []
+        
+        # Define priority order: TIMEOUT (3) > ERROR (2) > WARNING (1) > OK (0)
+        # Group signals by status and sort alphabetically within each group
+        status_groups = {"TIMEOUT": [], "ERROR": [], "WARNING": [], "OK": []}
         for signal in pcb.signals.values():
-            rows.append((signal.name, f"{signal.value:.5f}", signal.unit, signal.status))
+            status_groups[signal.status].append(signal)
+        
+        # Sort signals alphabetically within each status group
+        for status in status_groups:
+            status_groups[status].sort(key=lambda s: s.name.lower())
+        
+        # Build ordered list by priority
+        ordered_signals = []
+        for status in ["TIMEOUT", "ERROR", "WARNING", "OK"]:
+            ordered_signals.extend(status_groups[status])
+        
+        rows: list[tuple[str, str, str, str]] = []
+        for signal in ordered_signals:
+            # Show "--" for timeout signals instead of actual value
+            if signal.status == "TIMEOUT":
+                value = "--"
+            else:
+                value = f"{signal.value:.5f}"
+            rows.append((signal.name, value, signal.unit, signal.status))
+        
         return rows or [("NO_DATA", "-", "-", "TIMEOUT")]
 
     def _sync_grid_rows(

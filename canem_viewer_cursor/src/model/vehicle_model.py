@@ -6,6 +6,8 @@ from collections import deque
 from dataclasses import dataclass, field
 from typing import Deque, Dict, List, Optional, Tuple
 
+from src.decoder.dbc_decoder import DBCDecoder
+
 
 STATUS_PRIORITY = {"OK": 0, "WARNING": 1, "ERROR": 2, "TIMEOUT": 3}
 
@@ -64,9 +66,48 @@ class VehicleState:
 
 
 class VehicleModel:
-    def __init__(self) -> None:
+    def __init__(self, dbc_path: Optional[str] = None) -> None:
         self._lock = threading.RLock()
         self.vehicle = VehicleState()
+        if dbc_path:
+            self.initialize_from_dbc(dbc_path)
+
+    def initialize_from_dbc(self, dbc_path: str) -> None:
+        """Initialize all signals from DBC file with TIMEOUT status"""
+        try:
+            decoder = DBCDecoder(dbc_path)
+            if not decoder.available:
+                return
+            
+            with self._lock:
+                for message in decoder.db.messages:
+                    # Merge FrontECU_Main and FrontECU_Status into "FrontECU"
+                    # Merge RearECU_Main and RearECU_Status into "RearECU"
+                    if message.name == "FrontECU_Main":
+                        pcb_name = "FrontECU"
+                    elif message.name == "FrontECU_Status":
+                        pcb_name = "FrontECU"
+                    elif message.name == "RearECU_Main":
+                        pcb_name = "RearECU"
+                    elif message.name == "RearECU_Status":
+                        pcb_name = "RearECU"
+                    else:
+                        pcb_name = message.name
+                    
+                    pcb = self.vehicle.pcbs.setdefault(pcb_name, PCBState(name=pcb_name))
+                    
+                    for signal in message.signals:
+                        # Use original signal names from DBC (no prefixes)
+                        signal_state = SignalState(
+                            name=signal.name,  # Original name from DBC
+                            unit=signal.unit or "",
+                            description=signal.comment or "",
+                            status="TIMEOUT",  # Initially all signals are in timeout
+                            cfg=SignalConfig(timeout_s=0.8)
+                        )
+                        pcb.signals[signal.name] = signal_state
+        except Exception:
+            pass  # Silently fail if DBC can't be loaded
 
     def lock(self) -> threading.RLock:
         return self._lock
