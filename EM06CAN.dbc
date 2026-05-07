@@ -1,7 +1,6 @@
 VERSION ""
 
-
-NS_ : 
+NS_ :
 	NS_DESC_
 	CM_
 	BA_DEF_
@@ -33,43 +32,110 @@ NS_ :
 
 BS_:
 
-BU_: RearECU FrontECU TSALgreen SDCreset HVDB HVAB
+BU_: FrontECU RearECU HVAB HVDB TSAL SDC
 
+BO_ 256 FrontECU_Main: 7 FrontECU
+ SG_ FpANLRpot : 0|8@1+ (1,0) [0|100] "%" FrontECU
+ SG_ FpANLLpot : 8|8@1+ (1,0) [0|100] "%" FrontECU
+ SG_ FpANLRsus : 16|8@1+ (1,0) [0|1000] "mm" FrontECU
+ SG_ FpANLLsus : 24|8@1+ (1,0) [0|1000] "mm" FrontECU
+ SG_ FpDIGRvel : 32|8@1+ (1,0) [0|255] "km/h" FrontECU
+ SG_ FpDIGLvel : 40|8@1+ (1,0) [0|255] "km/h" FrontECU
+ SG_ FpANLbrake : 48|8@1+ (1,0) [0|200] "MPa" FrontECU
 
-BO_ 0 TSALgreen_msg: 8 TSALgreen
- SG_ TpSHU : 16|16@1+ (1,0) [0|65535] "mA" Vector__XXX
- SG_ TpTHRhv : 8|1@1+ (1,0) [0|1] "" Vector__XXX
- SG_ TpTHRdis : 10|1@1+ (1,0) [0|1] "" Vector__XXX
- SG_ TpLCH : 11|1@1+ (1,0) [0|1] "" Vector__XXX
- SG_ TpINTled : 12|1@1+ (1,0) [0|1] "" Vector__XXX
- SG_ TpERRscs : 9|1@1+ (1,0) [0|1] "" Vector__XXX
- SG_ TpDIGspre : 0|1@1+ (1,0) [0|1] "" Vector__XXX
- SG_ TpDIGsairp : 1|1@1+ (1,0) [0|1] "" Vector__XXX
- SG_ TpDIGsairn : 2|1@1+ (1,0) [0|1] "" Vector__XXX
- SG_ TpDIGipre : 3|1@1+ (1,0) [0|1] "" Vector__XXX
- SG_ TpDIGiairp : 4|1@1+ (1,0) [0|1] "" Vector__XXX
- SG_ TpDIGiairn : 5|1@1+ (1,0) [0|1] "" Vector__XXX
+BO_ 257 FrontECU_Status: 8 FrontECU
+ SG_ FpINTebms    : 0|1@1+ (1,0) [0|1] "" FrontECU
+ SG_ FpINTeimd    : 1|1@1+ (1,0) [0|1] "" FrontECU
+ SG_ FpINTtsoff   : 2|1@1+ (1,0) [0|1] "" FrontECU
+ SG_ FpINTsbms    : 3|1@1+ (1,0) [0|1] "" FrontECU
+ SG_ FpINTpre     : 4|1@1+ (1,0) [0|1] "" FrontECU
+ SG_ FpINTr2d     : 5|1@1+ (1,0) [0|1] "" FrontECU
+ SG_ FpINTmenu    : 6|1@1+ (1,0) [0|1] "" FrontECU
+ SG_ FpDIGmicrosd : 7|1@1+ (1,0) [0|1] "" FrontECU
 
-BO_ 16 HVDB_msg: 6 HVDB
- SG_ BSHUmsb : 24|8@1+ (1,0) [0|255] "mA" Vector__XXX
- SG_ BSHUlsb : 16|8@1+ (1,0) [0|255] "mA" Vector__XXX
- SG_ DSHUmsb : 40|8@1+ (1,0) [0|255] "mA" Vector__XXX
- SG_ DSHUlsb : 32|8@1+ (1,0) [0|255] "mA" Vector__XXX
- SG_ DSDCintlck2 : 12|1@1+ (1,0) [0|1] "" Vector__XXX
- SG_ DSDCintlck1 : 11|1@1+ (1,0) [0|1] "" Vector__XXX
- SG_ DLCHdischarge : 10|1@1+ (1,0) [0|1] "" Vector__XXX
- SG_ DTHRhv : 9|1@1+ (1,0) [0|1] "" Vector__XXX
- SG_ DSDC : 8|1@1+ (1,0) [0|1] "" Vector__XXX
- SG_ BSDC : 4|1@1+ (1,0) [0|1] "" Vector__XXX
- SG_ BERRtimer : 3|1@1+ (1,0) [0|1] "" Vector__XXX
- SG_ BERRplaus : 2|1@1+ (1,0) [0|1] "-" Vector__XXX
- SG_ BTHRcurrent : 1|1@1+ (1,0) [0|1] "-" Vector__XXX
- SG_ BTHRbrake : 0|1@1+ (1,0) [0|1] "-" Vector__XXX
+ SG_ FpSDCinertia : 8|1@1+ (1,0) [0|1] "" FrontECU
+ SG_ FpSDCbots    : 9|1@1+ (1,0) [0|1] "" FrontECU
+ SG_ FpSDCcsdb    : 10|1@1+ (1,0) [0|1] "" FrontECU
+ SG_ FpERRapps    : 11|1@1+ (1,0) [0|1] "" FrontECU
+ SG_ FpDIGrefri   : 12|2@1+ (1,0) [0|3] "" FrontECU
+ SG_ FpDIGr2d     : 14|1@1+ (1,0) [0|1] "" FrontECU
 
+ SG_ FpDIGvel     : 16|8@1+ (1,0) [0|255] "km/h" FrontECU
+ SG_ FpANLtaccu   : 24|8@1- (1,0) [-40|150] "degC" FrontECU
+ SG_ FpANLvaccu   : 32|8@1+ (1,0) [0|500] "V" FrontECU
+ SG_ FpSHU        : 40|16@1+ (1,0) [0|5000] "mA" FrontECU
 
+BO_ 512 RearECU_Main: 8 RearECU
+ SG_ RpSIGRsus   : 0|8@1+ (1,0) [0|1000] "mm" RearECU
+ SG_ RpSIGLsus   : 8|8@1+ (1,0) [0|1000] "mm" RearECU
+ SG_ RpSIGRspeed : 16|8@1+ (1,0) [0|255] "km/h" RearECU
+ SG_ RpSIGLspeed : 24|8@1+ (1,0) [0|255] "km/h" RearECU
+ SG_ RpSIGItempM : 32|8@1- (1,0) [-40|150] "degC" RearECU
+ SG_ RpSIGOtempM : 40|8@1- (1,0) [-40|150] "degC" RearECU
+ SG_ RpSIGItempI : 48|8@1- (1,0) [-40|150] "degC" RearECU
+ SG_ RpSIGOtempI : 56|8@1- (1,0) [-40|150] "degC" RearECU
+
+BO_ 513 RearECU_Status: 6 RearECU
+ SG_ RpSDChvd      : 0|1@1+ (1,0) [0|1] "" RearECU
+ SG_ RpSDCtsms     : 1|1@1+ (1,0) [0|1] "" RearECU
+ SG_ RpSDCrsdb     : 2|1@1+ (1,0) [0|1] "" RearECU
+ SG_ RpSDClsdb     : 3|1@1+ (1,0) [0|1] "" RearECU
+
+ SG_ RpSTAbrkledR  : 8|1@1+ (1,0) [0|1] "" RearECU
+ SG_ RpSTAbrkledG  : 9|1@1+ (1,0) [0|1] "" RearECU
+ SG_ RpSTAbrkledB  : 10|1@1+ (1,0) [0|1] "" RearECU
+ SG_ RpSTArefriaccu : 11|1@1+ (1,0) [0|1] "" RearECU
+ SG_ RpSTArefrimot  : 12|1@1+ (1,0) [0|1] "" RearECU
+ SG_ RpSTArefriinv  : 13|1@1+ (1,0) [0|1] "" RearECU
+
+ SG_ RpSIGlvs : 16|16@1+ (1,0) [0|100] "V" RearECU
+ SG_ RpSHU    : 32|16@1+ (1,0) [0|5000] "mA" RearECU
+
+BO_ 768 HVAB: 3 HVAB
+ SG_ ApTHRhv : 0|1@1+ (1,0) [0|1] "" HVAB
+ SG_ ApSHU   : 8|16@1+ (1,0) [0|5000] "mA" HVAB
+
+BO_ 1024 HVDB: 6 HVDB
+ SG_ BpTHRbrake      : 0|1@1+ (1,0) [0|1] "" HVDB
+ SG_ BpTHRcurrent    : 1|1@1+ (1,0) [0|1] "" HVDB
+ SG_ BpERRplaus      : 2|1@1+ (1,0) [0|1] "" HVDB
+ SG_ BpERRtimer      : 3|1@1+ (1,0) [0|1] "" HVDB
+ SG_ BpSDC           : 4|1@1+ (1,0) [0|1] "" HVDB
+
+ SG_ DpSDC           : 8|1@1+ (1,0) [0|1] "" HVDB
+ SG_ DpTHRhv         : 9|1@1+ (1,0) [0|1] "" HVDB
+ SG_ DpLCHdischarge  : 10|1@1+ (1,0) [0|1] "" HVDB
+ SG_ DpSDCintlck1    : 11|1@1+ (1,0) [0|1] "" HVDB
+ SG_ DpSDCintlck2    : 12|1@1+ (1,0) [0|1] "" HVDB
+
+ SG_ BpSHU : 16|16@1+ (1,0) [0|5000] "mA" HVDB
+ SG_ DpSHU : 32|16@1+ (1,0) [0|5000] "mA" HVDB
+
+BO_ 1280 TSAL: 4 TSAL
+ SG_ TpDIGspre  : 0|1@1+ (1,0) [0|1] "" TSAL
+ SG_ TpDIGsairp : 1|1@1+ (1,0) [0|1] "" TSAL
+ SG_ TpDIGsairn : 2|1@1+ (1,0) [0|1] "" TSAL
+ SG_ TpDIGipre  : 3|1@1+ (1,0) [0|1] "" TSAL
+ SG_ TpDIGiairp : 4|1@1+ (1,0) [0|1] "" TSAL
+ SG_ TpDIGiairn : 5|1@1+ (1,0) [0|1] "" TSAL
+
+ SG_ TpTHRhv  : 8|1@1+ (1,0) [0|1] "" TSAL
+ SG_ TpERRscs : 9|1@1+ (1,0) [0|1] "" TSAL
+ SG_ TpTHRdis : 10|1@1+ (1,0) [0|1] "" TSAL
+ SG_ TpLCH    : 11|1@1+ (1,0) [0|1] "" TSAL
+ SG_ TpINTled : 12|1@1+ (1,0) [0|1] "" TSAL
+
+BO_ 1536 SDC_Reset: 3 SDC
+ SG_ SpERRbms   : 0|1@1+ (1,0) [0|1] "" SDC
+ SG_ SpERRimd   : 1|1@1+ (1,0) [0|1] "" SDC
+ SG_ SpLCHebms  : 2|1@1+ (1,0) [0|1] "" SDC
+ SG_ SpLCHeimd  : 3|1@1+ (1,0) [0|1] "" SDC
+ SG_ SpINTresbut: 4|1@1+ (1,0) [0|1] "" SDC
+ SG_ SpSDCbms   : 5|1@1+ (1,0) [0|1] "" SDC
+ SG_ SpSDCimd   : 6|1@1+ (1,0) [0|1] "" SDC
+ SG_ SpSHU      : 8|16@1+ (1,0) [0|5000] "mA" SDC
 
 BA_DEF_  "MultiplexExtEnabled" ENUM  "No","Yes";
 BA_DEF_  "BusType" STRING ;
 BA_DEF_DEF_  "MultiplexExtEnabled" "No";
 BA_DEF_DEF_  "BusType" "CAN";
-
