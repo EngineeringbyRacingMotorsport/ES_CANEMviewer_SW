@@ -1,11 +1,17 @@
 from __future__ import annotations
 
+import json
 import math
 import time
+from collections import deque
+from queue import Empty
+from typing import Optional, Tuple
+
 import tkinter as tk
 from tkinter import ttk
 
 from src.model.vehicle_model import PCBState, VehicleModel
+from src.validation.car_state_manager import get_car_state_manager
 
 DARK_BG = "#1e1e1e"
 CARD_BG = "#2a2a2a"
@@ -153,32 +159,36 @@ class GeneralTab(tk.Frame):
         content = tk.Frame(self.main_container, bg=bg_main)
         content.grid(row=1, column=0, sticky="nsew", padx=20, pady=20)
         content.grid_rowconfigure(0, weight=1)
-        content.grid_columnconfigure(0, weight=1)
-        content.grid_columnconfigure(1, weight=2)
+        content.grid_columnconfigure(0, weight=0)  # Panell esquerre sense expandir
+        content.grid_columnconfigure(1, weight=1)  # Panell dret ocupa tota la resta
 
         # Panell Esquerre (Llista de senyals) amb scrollbar
         left_panel = tk.Frame(content, bg=bg_card, highlightbackground=border_color, highlightthickness=1)
         left_panel.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
-        left_panel.grid_columnconfigure(0, weight=1)
-        left_panel.grid_columnconfigure(1, weight=0) # La columna de la scrollbar no s'expandeix
+        left_panel.grid_rowconfigure(0, weight=1)
+        left_panel.grid_columnconfigure(0, weight=1)  # Canvas ocupa tot l'espai
+        left_panel.grid_columnconfigure(1, weight=0, minsize=15)  # Scrollbar amb amplada fixa
 
-        # Crear scrollbar directament al panel
-        scrollbar = tk.Scrollbar(left_panel, orient="vertical")
-        scrollbar.grid(row=0, column=1, sticky="ns") # Sense padding per estar a prop
+        # Crear scrollbar amb amplada fixa
+        scrollbar = tk.Scrollbar(left_panel, orient="vertical", width=15)
+        scrollbar.grid(row=0, column=1, sticky="ns")
         
         # Configurar el canvas per fer scroll
         canvas = tk.Canvas(left_panel, bg=bg_card, highlightthickness=0, yscrollcommand=scrollbar.set)
-        canvas.grid(row=0, column=0, sticky="nsew", padx=(0, 0), pady=2) # Sense padding horitzontal
+        canvas.grid(row=0, column=0, sticky="nsew", padx=2, pady=2)
         scrollbar.config(command=canvas.yview)
         
         self.detail_table_body = tk.Frame(canvas, bg=bg_card)
-        canvas_window = canvas.create_window((0, 0), window=self.detail_table_body, anchor="nw")
+        canvas_window = canvas.create_window((0, 0), window=self.detail_table_body, anchor="nw", width=canvas.winfo_width() - scrollbar.winfo_width())
         
         self.detail_rows_widgets = []
 
         # Configurar el scroll per actualitzar-se quan canviï el contingut
         def configure_scroll_region(e=None):
             canvas.configure(scrollregion=canvas.bbox("all"))
+            # Actualitzar l'amplada de la finestra per ocupar tot l'espai
+            if canvas.winfo_width() > 1:
+                canvas.itemconfig(canvas_window, width=canvas.winfo_width() - scrollbar.winfo_width())
         
         self.detail_table_body.bind("<Configure>", configure_scroll_region)
         canvas.bind("<Configure>", configure_scroll_region)
@@ -186,29 +196,62 @@ class GeneralTab(tk.Frame):
         # Panell Dret (Detalls i Gràfica)
         right_panel = tk.Frame(content, bg=bg_card, highlightbackground=border_color, highlightthickness=1)
         right_panel.grid(row=0, column=1, sticky="nsew")
-        right_panel.grid_rowconfigure(0, weight=1)
-        right_panel.grid_rowconfigure(1, weight=2)
+        right_panel.grid_rowconfigure(0, weight=0)  # Secció superior (info + config)
+        right_panel.grid_rowconfigure(1, weight=2)  # Gràfica (més espai)
         right_panel.grid_columnconfigure(0, weight=1)
 
-        # Info del senyal (Dalt a la dreta)
-        info_frame = tk.Frame(right_panel, bg=bg_card)
-        info_frame.grid(row=0, column=0, sticky="nsew", padx=12, pady=(10, 6))
-        info_frame.grid_columnconfigure(1, weight=1)
+        # Secció superior (info + configuració)
+        top_section = tk.Frame(right_panel, bg=bg_card)
+        top_section.grid(row=0, column=0, sticky="nsew", padx=12, pady=(10, 6))
+        top_section.grid_columnconfigure(0, weight=1)  # Columna info
+        top_section.grid_columnconfigure(1, weight=0)  # Columna configuració
 
-        name_label = tk.Label(info_frame, bg=bg_card, fg="#4dd0ba", font=("Segoe UI", 16, "bold"), anchor="w")
-        code_label = tk.Label(info_frame, bg=bg_card, fg=fg_text, font=("Segoe UI", 10), anchor="w")
-        minmax_label = tk.Label(info_frame, bg=bg_card, fg=fg_text, font=("Segoe UI", 10), anchor="w")
-        desc_label = tk.Label(
-            info_frame, bg=bg_card, fg=fg_muted, font=("Segoe UI", 10), 
-            anchor="nw", justify="left", wraplength=640
-        )
+        # Columna esquerra: Informació de la dada (una única columna)
+        info_frame = tk.Frame(top_section, bg=bg_card)
+        info_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 12))
         
-        name_label.grid(row=0, column=0, columnspan=2, sticky="w")
-        code_label.grid(row=1, column=0, sticky="w", pady=(6, 0))
-        minmax_label.grid(row=1, column=1, sticky="w", pady=(6, 0))
-        desc_label.grid(row=2, column=0, columnspan=2, sticky="w", pady=(8, 0))
+        # Títol del senyal
+        name_label = tk.Label(info_frame, bg=bg_card, fg="#4dd0ba", font=("Segoe UI", 16, "bold"), anchor="w")
+        name_label.grid(row=0, column=0, sticky="w", pady=(0, 4))
+        
+        # Informació en columna única
+        code_label = tk.Label(info_frame, bg=bg_card, fg=fg_text, font=("Segoe UI", 10), anchor="w")
+        code_label.grid(row=1, column=0, sticky="w", pady=(0, 2))
+        
+        minmax_label = tk.Label(info_frame, bg=bg_card, fg=fg_text, font=("Segoe UI", 10), anchor="w")
+        minmax_label.grid(row=2, column=0, sticky="w", pady=(0, 2))
+        
+        desc_label = tk.Label(info_frame, bg=bg_card, fg=fg_muted, font=("Segoe UI", 10), 
+                             anchor="nw", justify="left", wraplength=400)
+        desc_label.grid(row=3, column=0, sticky="w", pady=(0, 0))
 
-        # Canvas per a la gràfica
+        # Columna dreta: Configuració dels estats
+        config_frame = tk.Frame(top_section, bg=bg_card, highlightbackground=border_color, highlightthickness=1)
+        self.signal_config_frame = config_frame
+        config_frame.grid(row=0, column=1, sticky="ne")
+        
+        # Títol de configuració
+        config_title = tk.Label(config_frame, bg=bg_card, fg="#4dd0ba", font=("Segoe UI", 10, "bold"), text="Configuració d'Estats")
+        config_title.grid(row=0, column=0, columnspan=2, sticky="w", padx=(6, 6), pady=(4, 4))
+        
+        # Frame per estats
+        values_frame = tk.Frame(config_frame, bg=bg_card)
+        values_frame.grid(row=1, column=0, columnspan=2, sticky="ew", padx=(6, 6), pady=(0, 4))
+        
+        # Capçaleres
+        tk.Label(values_frame, bg=bg_card, fg=fg_text, font=("Segoe UI", 9, "bold"), text="Estat").grid(row=0, column=0, padx=2, pady=2)
+        tk.Label(values_frame, bg=bg_card, fg=fg_text, font=("Segoe UI", 9, "bold"), text="Mode").grid(row=0, column=1, padx=2, pady=2)
+        
+        # Configuració per estat
+        self.signal_config_widgets = {}
+        self._create_signal_config_widgets(values_frame)
+        
+        # Botó de guardar
+        save_button = tk.Button(config_frame, text="Guardar", bg="#4dd0ba", fg="white", font=("Segoe UI", 9, "bold"),
+                               command=self._save_all_signal_config, width=10)
+        save_button.grid(row=2, column=0, columnspan=2, sticky="ew", padx=(6, 6), pady=(4, 6))
+
+        # Canvas per a la gràfica (part inferior)
         plot_bg = "#222222" if self._dark_mode else "#ffffff"
         plot_canvas = tk.Canvas(
             right_panel, 
@@ -458,6 +501,116 @@ class GeneralTab(tk.Frame):
             # Force row restyle in next tick.
             self._detail_rows_cache = []
 
+    def _create_signal_config_widgets(self, parent_frame: tk.Frame) -> None:
+        """Crea els widgets per configurar valors OK/ERROR per estat"""
+        car_state_manager = get_car_state_manager()
+        states = car_state_manager.get_all_states()
+        
+        # Determinar colors segons el mode
+        bg_card = CARD_BG if self._dark_mode else "#ffffff"
+        fg_text = TEXT_MAIN if self._dark_mode else "#1a1a1a"
+        
+        # Crear widgets per cada estat
+        for i, (state_name, state_desc) in enumerate(states.items(), start=1):
+            # Nom de l'estat
+            state_label = tk.Label(parent_frame, bg=bg_card, fg=fg_text, font=("Segoe UI", 9), text=state_name)
+            state_label.grid(row=i, column=0, sticky="w", padx=2, pady=2)
+            
+            # Menú desplegable per configuració
+            config_var = tk.StringVar(value="DIRECT")
+            config_menu = ttk.Combobox(parent_frame, textvariable=config_var, values=["DIRECT", "INVERTED"], 
+                                      state="readonly", width=12, font=("Segoe UI", 9))
+            config_menu.grid(row=i, column=1, sticky="w", padx=2, pady=2)
+            
+            self.signal_config_widgets[state_name] = {
+                "state_label": state_label,
+                "config_var": config_var,
+                "config_menu": config_menu
+            }
+    
+    def _save_all_signal_config(self) -> None:
+        """Guarda la configuració del senyal per tots els estats"""
+        if not self.active_signal:
+            return
+        
+        try:
+            # Actualitzar configuració JSON
+            car_state_manager = get_car_state_manager()
+            
+            # Obtenir configuració actual
+            signal_config = car_state_manager.get_signal_config(self.active_signal)
+            if signal_config and signal_config.get("logic") == "state_dependent":
+                # Actualitzar valors per cada estat
+                if "car_states" not in signal_config:
+                    signal_config["car_states"] = {}
+                
+                for state_name, widgets in self.signal_config_widgets.items():
+                    config_value = widgets["config_var"].get()
+                    
+                    if state_name not in signal_config["car_states"]:
+                        signal_config["car_states"][state_name] = {}
+                    
+                    # Convertir DIRECT/INVERTED a valors OK/ERROR
+                    if config_value == "DIRECT":
+                        signal_config["car_states"][state_name]["ok_values"] = [1]
+                        signal_config["car_states"][state_name]["error_values"] = [0]
+                        signal_config["car_states"][state_name]["description"] = f"Senyal {self.active_signal} en estat {state_name} (DIRECT)"
+                    else:  # INVERTED
+                        signal_config["car_states"][state_name]["ok_values"] = [0]
+                        signal_config["car_states"][state_name]["error_values"] = [1]
+                        signal_config["car_states"][state_name]["description"] = f"Senyal {self.active_signal} en estat {state_name} (INVERTED)"
+                
+                # Guardar al fitxer JSON
+                self._save_config_to_file(car_state_manager.config)
+                
+                # Mostrar confirmació
+                print(f"Configuració guardada per {self.active_signal} a tots els estats")
+        
+        except Exception as e:
+            print(f"Error guardant configuració: {e}")
+    
+    def _save_config_to_file(self, config: dict) -> None:
+        """Guarda la configuració al fitxer JSON"""
+        import json
+        try:
+            with open("config/digital_signals.json", "w", encoding="utf-8") as f:
+                json.dump(config, f, indent=4, ensure_ascii=False)
+        except Exception as e:
+            print(f"Error guardant fitxer de configuració: {e}")
+    
+    def _update_signal_config_ui(self, signal_name: str, signal) -> None:
+        """Actualitza la UI de configuració per al senyal seleccionat"""
+        car_state_manager = get_car_state_manager()
+        signal_config = car_state_manager.get_signal_config(signal_name)
+        
+        # Amostrar o amagar el panell de configuració
+        is_digital = (signal.cfg.min_valid == 0 and signal.cfg.max_valid == 1)
+        
+        if is_digital and signal_config:
+            # Mostrar configuració
+            self.signal_config_frame.grid()
+            
+            # Actualitzar valors per cada estat
+            for state_name, widgets in self.signal_config_widgets.items():
+                state_config = signal_config.get("car_states", {}).get(state_name, {})
+                
+                ok_values = state_config.get("ok_values", [1])
+                error_values = state_config.get("error_values", [0])
+                
+                # Determinar si és DIRECT o INVERTED
+                if ok_values == [1] and error_values == [0]:
+                    config_value = "DIRECT"
+                elif ok_values == [0] and error_values == [1]:
+                    config_value = "INVERTED"
+                else:
+                    # Valors personalitzats, usar DIRECT per defecte
+                    config_value = "DIRECT"
+                
+                widgets["config_var"].set(config_value)
+        else:
+            # Amagar configuració per senyals no digitals
+            self.signal_config_frame.grid_remove()
+
     def _refresh_signal_panel(self, pcb: PCBState | None) -> None:
         if pcb is None or self.active_signal is None:
             return
@@ -481,6 +634,10 @@ class GeneralTab(tk.Frame):
             minmax_label.config(text=f"Min (60s): {signal.min:.3f}    Max (60s): {signal.max:.3f}")
         if isinstance(desc_label, tk.Label):
             desc_label.config(text=f"Descripció: {signal.description or 'Sense descripció'}")
+        
+        # Actualitzar UI de configuració
+        self._update_signal_config_ui(signal.name, signal)
+        
         now = time.monotonic()
         canvas_size = (plot_canvas.winfo_width(), plot_canvas.winfo_height())
         must_redraw = (

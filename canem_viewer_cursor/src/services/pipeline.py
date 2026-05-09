@@ -5,11 +5,11 @@ import time
 from queue import Empty, Queue
 from typing import Optional
 
-from src.can_layer.vector_interface import MockCANReader, NoVectorReader, VectorCANReader
+from src.can_layer.vector_interface import VectorCANReader, NoVectorReader
 from src.decoder.dbc_decoder import DBCDecoder
-from src.model.vehicle_model import SignalConfig, VehicleModel
+from src.model.vehicle_model import SignalState, SignalConfig
+from src.validation.status_engine import validate_signal, get_car_state_manager
 from src.persistence.saver import PersistenceWorker
-from src.validation.status_engine import validate_signal
 
 
 class TelemetryPipeline:
@@ -105,6 +105,11 @@ class TelemetryPipeline:
         while not self.stop_event.is_set():
             now = time.time()
             self.model.check_timeouts(now=now)
+            
+            # Actualitzar estat del cotxe
+            car_state_manager = get_car_state_manager()
+            car_state_manager.update_state(self.model)
+            
             self.model.recompute_global_state()
             time.sleep(1.0)  # Canviat a 1000ms (1s) per comprovació de timeouts
 

@@ -95,21 +95,9 @@ BO_ 768 HVAB: 3 HVAB
  SG_ ApTHRhv : 0|1@1+ (1,0) [0|1] "" HVAB
  SG_ ApSHU   : 8|16@1+ (1,0) [0|5000] "mA" HVAB
 
-BO_ 1024 HVDB: 6 HVDB
+BO_ 1024 HVDB: 2 HVDB
  SG_ BpTHRbrake      : 0|1@1+ (1,0) [0|1] "" HVDB
  SG_ BpTHRcurrent    : 1|1@1+ (1,0) [0|1] "" HVDB
- SG_ BpERRplaus      : 2|1@1+ (1,0) [0|1] "" HVDB
- SG_ BpERRtimer      : 3|1@1+ (1,0) [0|1] "" HVDB
- SG_ BpSDC           : 4|1@1+ (1,0) [0|1] "" HVDB
-
- SG_ DpSDC           : 8|1@1+ (1,0) [0|1] "" HVDB
- SG_ DpTHRhv         : 9|1@1+ (1,0) [0|1] "" HVDB
- SG_ DpLCHdischarge  : 10|1@1+ (1,0) [0|1] "" HVDB
- SG_ DpSDCintlck1    : 11|1@1+ (1,0) [0|1] "" HVDB
- SG_ DpSDCintlck2    : 12|1@1+ (1,0) [0|1] "" HVDB
-
- SG_ BpSHU : 16|16@1+ (1,0) [0|5000] "mA" HVDB
- SG_ DpSHU : 32|16@1+ (1,0) [0|5000] "mA" HVDB
 
 BO_ 1280 TSAL: 2 TSAL
  SG_ TpDIGspre  : 0|1@1+ (1,0) [0|1] "" TSAL

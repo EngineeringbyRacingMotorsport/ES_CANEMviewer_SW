@@ -98,12 +98,16 @@ class VehicleModel:
                     
                     for signal in message.signals:
                         # Use original signal names from DBC (no prefixes)
+                        # Read min/max values from DBC signal definition
+                        min_valid = 0.0 if (signal.minimum is not None and signal.maximum is not None and signal.minimum == 0 and signal.maximum == 1) else signal.minimum
+                        max_valid = 1.0 if (signal.minimum is not None and signal.maximum is not None and signal.minimum == 0 and signal.maximum == 1) else signal.maximum
+                        
                         signal_state = SignalState(
                             name=signal.name,  # Original name from DBC
                             unit=signal.unit or "",
                             description=signal.comment or "",
                             status="TIMEOUT",  # Initially all signals are in timeout
-                            cfg=SignalConfig(timeout_s=0.8)
+                            cfg=SignalConfig(timeout_s=0.8, min_valid=min_valid, max_valid=max_valid)
                         )
                         pcb.signals[signal.name] = signal_state
         except Exception:

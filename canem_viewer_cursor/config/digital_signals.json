@@ -1,0 +1,217 @@
+{
+    "car_states": {
+        "INIT": {
+            "description": "Estat inicial del cotxe",
+            "trigger_signals": {
+                "traction_enable": 0,
+                "r2d_active": 0
+            }
+        },
+        "ACTIVE": {
+            "description": "Cotxe en marxa",
+            "trigger_signals": {
+                "traction_enable": 1,
+                "r2d_active": 0
+            }
+        },
+        "R2D": {
+            "description": "Estat Ready-to-Drive",
+            "trigger_signals": {
+                "traction_enable": 1,
+                "r2d_active": 1
+            }
+        }
+    },
+    "digital_signals": {
+        "BpTHRbrake": {
+            "type": "digital",
+            "logic": "state_dependent",
+            "car_states": {
+                "INIT": {
+                    "ok_values": [0],
+                    "error_values": [1],
+                    "description": "Fre activat en INIT"
+                },
+                "ACTIVE": {
+                    "ok_values": [1],
+                    "error_values": [0],
+                    "description": "Fre activat en ACTIVE"
+                },
+                "R2D": {
+                    "ok_values": [1],
+                    "error_values": [0],
+                    "description": "Fre activat en R2D"
+                }
+            },
+            "default_state": "INIT"
+        },
+        "BpTHRcurrent": {
+            "type": "digital",
+            "logic": "simple_binary",
+            "independent": true,
+            "description": "Sensor de corrent independent de l'estat"
+        },
+        "BpERRplaus": {
+            "type": "digital",
+            "logic": "state_dependent",
+            "car_states": {
+                "INIT": {
+                    "ok_values": [0],
+                    "error_values": [1],
+                    "description": "Error de plausibilitat en INIT"
+                },
+                "ACTIVE": {
+                    "ok_values": [0],
+                    "error_values": [1],
+                    "description": "Error de plausibilitat en ACTIVE"
+                },
+                "R2D": {
+                    "ok_values": [0],
+                    "error_values": [1],
+                    "description": "Error de plausibilitat en R2D"
+                }
+            },
+            "default_state": "INIT"
+        },
+        "BpERRtimer": {
+            "type": "digital",
+            "logic": "state_dependent",
+            "car_states": {
+                "INIT": {
+                    "ok_values": [0],
+                    "error_values": [1],
+                    "description": "Error de timer en INIT"
+                },
+                "ACTIVE": {
+                    "ok_values": [0],
+                    "error_values": [1],
+                    "description": "Error de timer en ACTIVE"
+                },
+                "R2D": {
+                    "ok_values": [0],
+                    "error_values": [1],
+                    "description": "Error de timer en R2D"
+                }
+            },
+            "default_state": "INIT"
+        },
+        "BpSDC": {
+            "type": "digital",
+            "logic": "state_dependent",
+            "car_states": {
+                "INIT": {
+                    "ok_values": [0],
+                    "error_values": [1],
+                    "description": "SDC en INIT"
+                },
+                "ACTIVE": {
+                    "ok_values": [1],
+                    "error_values": [0],
+                    "description": "SDC en ACTIVE"
+                },
+                "R2D": {
+                    "ok_values": [1],
+                    "error_values": [0],
+                    "description": "SDC en R2D"
+                }
+            },
+            "default_state": "INIT"
+        },
+        "DpSDC": {
+            "type": "digital",
+            "logic": "simple_binary",
+            "independent": true,
+            "description": "SDC digital independent"
+        },
+        "DpTHRhv": {
+            "type": "digital",
+            "logic": "simple_binary",
+            "independent": true,
+            "description": "HV threshold independent"
+        },
+        "DpLCHdischarge": {
+            "type": "digital",
+            "logic": "simple_binary",
+            "independent": true,
+            "description": "Descàrrega independent"
+        },
+        "DpSDCintlck1": {
+            "type": "digital",
+            "logic": "simple_binary",
+            "independent": true,
+            "description": "Interlock 1 independent"
+        },
+        "DpSDCintlck2": {
+            "type": "digital",
+            "logic": "simple_binary",
+            "independent": true,
+            "description": "Interlock 2 independent"
+        },
+        "TpDIGspre": {
+            "type": "digital",
+            "logic": "simple_binary",
+            "independent": true,
+            "description": "Pre-charge independent"
+        },
+        "TpDIGsairp": {
+            "type": "digital",
+            "logic": "simple_binary",
+            "independent": true,
+            "description": "Air positive independent"
+        },
+        "TpDIGsairn": {
+            "type": "digital",
+            "logic": "simple_binary",
+            "independent": true,
+            "description": "Air negative independent"
+        },
+        "TpDIGipre": {
+            "type": "digital",
+            "logic": "simple_binary",
+            "independent": true,
+            "description": "Pre independent"
+        },
+        "TpDIGiairp": {
+            "type": "digital",
+            "logic": "simple_binary",
+            "independent": true,
+            "description": "Air positive independent"
+        },
+        "TpDIGiairn": {
+            "type": "digital",
+            "logic": "simple_binary",
+            "independent": true,
+            "description": "Air negative independent"
+        },
+        "TpTHRhv": {
+            "type": "digital",
+            "logic": "simple_binary",
+            "independent": true,
+            "description": "HV threshold independent"
+        },
+        "TpERRscs": {
+            "type": "digital",
+            "logic": "simple_binary",
+            "independent": true,
+            "description": "Error SCS independent"
+        },
+        "TpTHRdis": {
+            "type": "digital",
+            "logic": "simple_binary",
+            "independent": true,
+            "description": "Throttle disable independent"
+        },
+        "TpLCH": {
+            "type": "digital",
+            "logic": "simple_binary",
+            "independent": true,
+            "description": "LCH independent"
+        },
+        "TpINTled": {
+            "type": "digital",
+            "logic": "simple_binary",
+            "independent": true,
+            "description": "LED independent"
+        }
+    }
+}

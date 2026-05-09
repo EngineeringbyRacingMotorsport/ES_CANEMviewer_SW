@@ -3,6 +3,22 @@ from __future__ import annotations
 import time
 
 from src.model.vehicle_model import SignalState
+from src.validation.car_state_manager import CarStateManager
+
+
+# Global CarStateManager instance
+_car_state_manager = CarStateManager()
+
+
+def get_car_state_manager() -> CarStateManager:
+    """Retorna la instància global del CarStateManager"""
+    return _car_state_manager
+
+
+def set_car_state_manager(manager: CarStateManager) -> None:
+    """Estableix la instància del CarStateManager"""
+    global _car_state_manager
+    _car_state_manager = manager
 
 
 def validate_signal(signal: SignalState, now: float | None = None) -> str:
@@ -11,13 +27,18 @@ def validate_signal(signal: SignalState, now: float | None = None) -> str:
     if signal.timestamp <= 0 or ts_now - signal.timestamp > signal.cfg.timeout_s:
         return "TIMEOUT"
 
-    if signal.cfg.min_valid is not None and signal.value < signal.cfg.min_valid:
-        return "ERROR"
-    if signal.cfg.max_valid is not None and signal.value > signal.cfg.max_valid:
-        return "ERROR"
-
-    if _is_frozen(signal, ts_now):
-        return "WARNING"
+    # Check if it's a digital signal (min=0, max=1)
+    is_digital = (signal.cfg.min_valid == 0 and signal.cfg.max_valid == 1)
+    
+    if is_digital:
+        # Validar senyal digital amb CarStateManager
+        return _car_state_manager.validate_digital_signal(signal.name, signal.value)
+    else:
+        # Analog signals: check range
+        if signal.cfg.min_valid is not None and signal.value < signal.cfg.min_valid:
+            return "ERROR"
+        if signal.cfg.max_valid is not None and signal.value > signal.cfg.max_valid:
+            return "ERROR"
 
     return "OK"
 
