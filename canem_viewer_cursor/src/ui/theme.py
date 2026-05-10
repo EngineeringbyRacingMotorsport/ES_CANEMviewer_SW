@@ -8,6 +8,11 @@ COLORS = {
     "error": "#ef4444",
     "timeout": "#f97316",
     "muted": "#9eb7b2",
+    # Colors unificats per a tota l'aplicació
+    "green": "#22C55E",      # Verd per estats OK/INIT
+    "red": "#D32F2F",       # Vermell per estats ERROR/ACTIVE/R2D
+    "yellow": "#FACC15",     # Groc per advertències
+    "blue": "#1E64C8",      # Blau per estats especials
 }
 
 FONT_H1 = ("Segoe UI", 18, "bold")

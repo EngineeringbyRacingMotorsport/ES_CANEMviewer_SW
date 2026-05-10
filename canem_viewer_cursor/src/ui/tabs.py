@@ -41,7 +41,7 @@ class GeneralTab(tk.Frame):
         self._last_plot_draw_s = 0.0
         self._last_plot_signal: str | None = None
         self._last_plot_canvas_size: tuple[int, int] = (0, 0)
-        self._dark_mode = True
+        self._dark_mode = False
 
         self.show_grid_view()
 
@@ -81,7 +81,9 @@ class GeneralTab(tk.Frame):
 
         for i, title in enumerate(pcb_names):
             row, col = i // num_cols, i % num_cols
-            container = tk.Frame(self.main_container, bg=CARD_BG, highlightbackground=CARD_BORDER, highlightthickness=1)
+            bg_card = CARD_BG if self._dark_mode else "#ffffff"
+            border_color = CARD_BORDER if self._dark_mode else "#d0d0d0"
+            container = tk.Frame(self.main_container, bg=bg_card, highlightbackground=border_color, highlightthickness=1)
             container.grid(row=row, column=col, sticky="nsew", padx=1, pady=1)
 
             header = tk.Button(
@@ -97,7 +99,7 @@ class GeneralTab(tk.Frame):
             )
             header.pack(fill="x")
 
-            body = tk.Frame(container, bg=CARD_BG)
+            body = tk.Frame(container, bg=bg_card)
             body.pack(fill="both", expand=True, padx=6, pady=4)
             self.grid_bodies[title] = body
             self._grid_widget_rows[title] = []
@@ -444,7 +446,7 @@ class GeneralTab(tk.Frame):
         previous_rows: list[tuple[str, str, str, str]],
     ) -> None:
         base_fg = TEXT_MAIN if self._dark_mode else "#1a1a1a"
-        base_bg = "#303030" if self._dark_mode else "#f5f5f5"
+        base_bg = "#303030" if self._dark_mode else "#ffffff"
         border_color = "#4a4a4a" if self._dark_mode else "#d0d0d0"
 
         while len(self.detail_rows_widgets) > len(rows):
@@ -586,7 +588,32 @@ class GeneralTab(tk.Frame):
         # Amostrar o amagar el panell de configuració
         is_digital = (signal.cfg.min_valid == 0 and signal.cfg.max_valid == 1)
         
-        if is_digital and signal_config:
+        if is_digital:
+            # Si no té configuració, crear una per defecte
+            if not signal_config:
+                signal_config = {
+                    "type": "digital",
+                    "logic": "state_dependent",
+                    "car_states": {
+                        "INIT": {
+                            "ok_values": [1],
+                            "error_values": [0],
+                            "description": f"{signal_name} en estat INIT"
+                        },
+                        "ACTIVE": {
+                            "ok_values": [1],
+                            "error_values": [0],
+                            "description": f"{signal_name} en estat ACTIVE"
+                        },
+                        "R2D": {
+                            "ok_values": [1],
+                            "error_values": [0],
+                            "description": f"{signal_name} en estat R2D"
+                        }
+                    },
+                    "default_state": "INIT"
+                }
+            
             # Mostrar configuració
             self.signal_config_frame.grid()
             
@@ -741,6 +768,21 @@ class GeneralTab(tk.Frame):
         self.configure(bg=bg_color)
         self.main_container.configure(bg=bg_color)
         
+        # Actualitzem estils dels Treeview
+        style = ttk.Style()
+        if enabled:
+            style.configure("PCB.Treeview", background="#2f2f2f", fieldbackground="#2f2f2f", foreground="#f2f2f2")
+            style.configure("PCB.Treeview.Heading", background="#3a3a3a", foreground="#d8d8d8")
+        else:
+            style.configure("PCB.Treeview", background="white", fieldbackground="white", foreground="#1a1a1a")
+            style.configure("PCB.Treeview.Heading", background="#e0e0e0", foreground="#1a1a1a")
+        
+        # Aplicar estil als Treeview existents
+        if hasattr(self, 'detail_table_body') and self.detail_table_body:
+            for widget in self.detail_table_body.winfo_children():
+                if isinstance(widget, ttk.Treeview):
+                    widget.configure(style="PCB.Treeview")
+        
         # Forcem el re-dibuix de la vista actual netejant les caches
         self._grid_rows_cache = {}
         self._detail_rows_cache = []
@@ -762,7 +804,7 @@ class SDCTab(tk.Frame):
 
         self.components = ["LVMS", "BSPD", "IMD", "AMS", "TSMS", "HV INTERLOCK", "BOTS", "INERTIA", "COCKPIT"]
         self.demo_enabled = True
-        self._dark_mode = True
+        self._dark_mode = False
         self.component_items: dict[str, tuple[int, int, int]] = {}
         self.component_status: dict[str, str] = {}
         self.sdc_state_items: tuple[int, int] | None = None
@@ -943,7 +985,7 @@ class SensorTab(tk.Frame):
         super().__init__(parent, bg=DARK_BG)
         self.model = model
         self.demo_enabled = True
-        self._dark_mode = True
+        self._dark_mode = False
         self._demo_phase = 0.0
         self._motor_flash = False
         self.grid_columnconfigure(0, weight=2)
@@ -1019,7 +1061,7 @@ class SensorTab(tk.Frame):
     def _build_tree_container(self, parent: tk.Widget, title: str) -> tk.Frame:
         frame = tk.Frame(parent, bg=CARD_BG, highlightbackground=CARD_BORDER, highlightthickness=1)
         tk.Label(frame, text=title, bg=CARD_BG, fg="#67d7c5", font=("Roboto", 10, "bold")).pack(anchor="w", padx=8, pady=(6, 4))
-        tree = ttk.Treeview(frame, columns=("loc", "value", "bar"), show="headings", height=4)
+        tree = ttk.Treeview(frame, columns=("loc", "value", "bar"), show="headings", height=4, style="PCB.Treeview")
         tree.heading("loc", text="Camp")
         tree.heading("value", text="Valor")
         tree.heading("bar", text="Barra")
@@ -1166,7 +1208,7 @@ class ConfigurationTab(tk.Frame):
             font=("Roboto", 10),
         ).pack(anchor="w", padx=18, pady=(0, 16))
 
-        self.dark_mode_var = tk.BooleanVar(value=True)
+        self.dark_mode_var = tk.BooleanVar(value=False)
         self.demo_var = tk.BooleanVar(value=True)
         self.refresh_var = tk.IntVar(value=250)
 
