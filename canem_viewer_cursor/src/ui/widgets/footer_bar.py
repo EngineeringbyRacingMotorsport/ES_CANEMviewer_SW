@@ -21,25 +21,17 @@ class FooterBar(tk.Frame):
         self.top.grid_columnconfigure(0, weight=1)
         self.top.grid_columnconfigure(1, weight=1)
         self.top.grid_columnconfigure(2, weight=1)
-        self.top.grid_columnconfigure(3, weight=1)  # Eliminades columnes per status i traction
+        self.top.grid_columnconfigure(3, weight=1)
 
         self.voltage = tk.Label(self.top, font=("Roboto", 11, "bold"), fg="#f2f2f2", bg="#2a2a2a", anchor="w")
         self.temp = tk.Label(self.top, font=("Roboto", 11, "bold"), fg="#f2f2f2", bg="#2a2a2a", anchor="w")
+        self.sdc_status = tk.Label(self.top, font=("Roboto", 11, "bold"), fg="#f2f2f2", bg="#2a2a2a", anchor="w")
         self.vehicle_state = tk.Label(self.top, font=("Roboto", 22, "bold"), fg=COLORS["green"], bg="#2a2a2a", anchor="e")  # Verd unificat
         
         self.voltage.grid(row=0, column=0, sticky="ew", padx=6)
         self.temp.grid(row=0, column=1, sticky="ew", padx=6)
-        self.vehicle_state.grid(row=0, column=2, columnspan=2, sticky="ew", padx=6)  # Ocupa més espai
-        
-        self.alerts = tk.Label(
-            self.panel,
-            font=("Roboto", 10),
-            fg="#d0d0d0",
-            bg="#2a2a2a",
-            anchor="w",
-            justify="left",
-        )
-        self.alerts.pack(fill="x", padx=18, pady=(0, 8))
+        self.sdc_status.grid(row=0, column=2, sticky="ew", padx=6)
+        self.vehicle_state.grid(row=0, column=3, sticky="ew", padx=6)
         
         self.ts_line = tk.Frame(self, bg="#22C55E", height=10)
         self.ts_line.pack(fill="x", side="bottom")
@@ -52,7 +44,24 @@ class FooterBar(tk.Frame):
             vehicle = self.model.vehicle
             voltage = vehicle.battery_voltage
             temp = vehicle.battery_temp
-            alerts = vehicle.critical_alerts
+            
+            # Obtenir estat del SDC
+            sdc_bms_status = self.model._safe_signal_value("SDC", "SpSDCbms")
+            sdc_imd_status = self.model._safe_signal_value("SDC", "SpSDCimd")
+            
+            # Determinar estat del SDC
+            if sdc_bms_status > 0.5 and sdc_imd_status > 0.5:
+                sdc_text = "SDC: ACTIVAT"
+                sdc_color = COLORS["green"]
+            elif sdc_bms_status > 0.5 and sdc_imd_status <= 0.5:
+                sdc_text = "SDC: ERROR IMD"
+                sdc_color = COLORS["red"]
+            elif sdc_bms_status <= 0.5 and sdc_imd_status > 0.5:
+                sdc_text = "SDC: ERROR BMS"
+                sdc_color = COLORS["red"]
+            else:
+                sdc_text = "SDC: DESACTIVAT"
+                sdc_color = COLORS["yellow"]
         
         # Obtenir estat actual del cotxe
         car_state_manager = get_car_state_manager()
@@ -60,7 +69,7 @@ class FooterBar(tk.Frame):
         
         self.voltage.config(text=f"Bateria: {voltage:.1f} V")
         self.temp.config(text=f"Temp Bateria: {temp:.1f} C")
-        self.alerts.config(text=" | ".join(alerts) if alerts else "Sense alertes crítiques")
+        self.sdc_status.config(text=sdc_text, fg=sdc_color)
         
         # Actualitzar estat del vehicle amb colors i parpelleig
         t = now if now is not None else time.monotonic()
@@ -90,8 +99,10 @@ class FooterBar(tk.Frame):
         if hasattr(self, 'vehicle_state'):
             if self._dark_mode:
                 self.vehicle_state.configure(bg="#2a2a2a", fg=COLORS["green"])
+                self.sdc_status.configure(bg="#2a2a2a", fg=sdc_color)
             else:
                 self.vehicle_state.configure(bg="white", fg=COLORS["green"])
+                self.sdc_status.configure(bg="white", fg=sdc_color)
 
     def set_dark_mode(self, enabled: bool) -> None:
         self._dark_mode = enabled
@@ -101,13 +112,13 @@ class FooterBar(tk.Frame):
             self.top.configure(bg="#2a2a2a")
             self.voltage.configure(bg="#2a2a2a", fg="#f2f2f2")
             self.temp.configure(bg="#2a2a2a", fg="#f2f2f2")
+            self.sdc_status.configure(bg="#2a2a2a", fg="#f2f2f2")
             self.vehicle_state.configure(bg="#2a2a2a", fg=COLORS["green"])
-            self.alerts.configure(bg="#2a2a2a", fg="#d0d0d0")
         else:
             self.configure(bg="#DDD")
             self.panel.configure(bg="white", highlightbackground="#C8C8C8")
             self.top.configure(bg="white")
             self.voltage.configure(bg="white", fg="#1A1A1A")
             self.temp.configure(bg="white", fg="#1A1A1A")
+            self.sdc_status.configure(bg="white", fg="#1A1A1A")
             self.vehicle_state.configure(bg="white", fg=COLORS["green"])
-            self.alerts.configure(bg="white", fg="#1A1A1A")

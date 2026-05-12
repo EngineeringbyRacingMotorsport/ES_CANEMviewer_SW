@@ -5,7 +5,7 @@ COLORS = {
     "text": "#f0f7f5",
     "ok": "#22c55e",
     "warning": "#facc15",
-    "error": "#ef4444",
+    "error": "#D32F2F",
     "timeout": "#f97316",
     "muted": "#9eb7b2",
     # Colors unificats per a tota l'aplicació
