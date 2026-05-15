@@ -17,8 +17,18 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
+    print("=" * 60)
+    print("CANEM Viewer Starting...")
+    print("=" * 60)
+    
     args = parse_args()
+    print(f"DEBUG: DBC path: {args.dbc}")
+    print(f"DEBUG: No vector mode: {args.no_vector}")
+    
     model = VehicleModel(dbc_path=args.dbc)
+    print(f"DEBUG: VehicleModel created with {len(model.vehicle.pcbs)} PCBs")
+    print(f"DEBUG: PCBs: {list(model.vehicle.pcbs.keys())}")
+    
     pipeline = TelemetryPipeline(
         model=model,
         dbc_path=args.dbc,
@@ -27,9 +37,15 @@ def main() -> None:
         vector_app_name=args.app_name,
         no_vector=args.no_vector,
     )
-    pipeline.start()
-
+    print("DEBUG: TelemetryPipeline created")
+    
     root = MainWindow(model=model, pipeline=pipeline)
+    print("DEBUG: MainWindow created")
+    
+    print("DEBUG: Starting pipeline...")
+    pipeline.start()
+    
+    print("DEBUG: Starting main window...")
     root.protocol("WM_DELETE_WINDOW", lambda: on_close(root, pipeline))
     root.mainloop()
 

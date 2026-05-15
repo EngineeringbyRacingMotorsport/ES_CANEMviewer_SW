@@ -361,7 +361,18 @@ class GeneralTab(tk.Frame):
             if signal.status == "TIMEOUT":
                 value = "--"
             else:
-                value = f"{signal.value:.5f}"
+                # Check if signal is digital (0-1 range)
+                # More flexible detection: check if range is approximately 0-1
+                min_val = signal.cfg.min_valid
+                max_val = signal.cfg.max_valid
+                is_digital = (abs(min_val) < 0.1 and abs(max_val - 1) < 0.1)
+                
+                if is_digital:
+                    # Digital signals: show as integer (0 or 1)
+                    value = f"{int(round(signal.value))}"
+                else:
+                    # Analog signals: show with 2 decimal places
+                    value = f"{signal.value:.2f}"
             rows.append((signal.name, value, signal.unit, signal.status))
         
         return rows or [("NO_DATA", "-", "-", "TIMEOUT")]
@@ -390,14 +401,19 @@ class GeneralTab(tk.Frame):
             frame = tk.Frame(body, bg=base_bg)
             frame.pack(fill="x", pady=1)
             
-            name = tk.Label(frame, anchor="w", bg=base_bg, fg=base_fg, font=("Segoe UI", 10, "bold"))
-            name.pack(side="left", fill="x", expand=True, padx=(6, 6), pady=2)
+            # Definir amplades fixes per a la vista de grid (espai limitat)
+            name_width = 16   # Amplada fixa per al nom del senyal (reduït per a grid)
+            value_width = 8   # Amplada fixa per al valor (reduït per a grid)
+            unit_width = 5    # Amplada fixa per a la unitat (reduït per a grid)
             
-            value = tk.Label(frame, anchor="e", width=7, bg=base_bg, fg=base_fg, font=("Segoe UI", 10))
-            value.pack(side="left", padx=(0, 6), pady=2)
+            name = tk.Label(frame, anchor="w", bg=base_bg, fg=base_fg, font=("Segoe UI", 10, "bold"), width=name_width)
+            name.pack(side="left", padx=(4, 2), pady=1)
             
-            unit = tk.Label(frame, anchor="w", width=5, bg=base_bg, fg=base_fg, font=("Segoe UI", 10))
-            unit.pack(side="left", padx=(0, 6), pady=2)
+            value = tk.Label(frame, anchor="e", bg=base_bg, fg=base_fg, font=("Segoe UI", 10), width=value_width)
+            value.pack(side="left", padx=(0, 2), pady=1)
+            
+            unit = tk.Label(frame, anchor="w", bg=base_bg, fg=base_fg, font=("Segoe UI", 10), width=unit_width)
+            unit.pack(side="left", padx=(0, 4), pady=1)
             
             widgets.append({"frame": frame, "name": name, "value": value, "unit": unit})
 
@@ -461,12 +477,21 @@ class GeneralTab(tk.Frame):
                 highlightthickness=1,
             )
             frame.pack(fill="x", pady=1)
-            name = tk.Label(frame, anchor="w", bg=base_bg, fg=base_fg, font=("Segoe UI", 10, "bold"))
-            name.pack(side="left", fill="x", expand=True, padx=(6, 6), pady=2)
-            value = tk.Label(frame, anchor="e", width=8, bg=base_bg, fg=base_fg, font=("Segoe UI", 10))
+            
+            # Definir amplades fixes per a totes les columnes (ajustades per mostrar tot el contingut)
+            name_width = 25   # Amplada fixa per al nom del senyal (en caràcters)
+            value_width = 12  # Amplada fixa per al valor (en caràcters)
+            unit_width = 8    # Amplada fixa per a la unitat (en caràcters)
+            
+            name = tk.Label(frame, anchor="w", bg=base_bg, fg=base_fg, font=("Segoe UI", 10, "bold"), width=name_width)
+            name.pack(side="left", padx=(6, 6), pady=2)
+            
+            value = tk.Label(frame, anchor="e", bg=base_bg, fg=base_fg, font=("Segoe UI", 10), width=value_width)
             value.pack(side="left", padx=(0, 6), pady=2)
-            unit = tk.Label(frame, anchor="w", width=7, bg=base_bg, fg=base_fg, font=("Segoe UI", 10))
+            
+            unit = tk.Label(frame, anchor="w", bg=base_bg, fg=base_fg, font=("Segoe UI", 10), width=unit_width)
             unit.pack(side="left", padx=(0, 6), pady=2)
+            
             self.detail_rows_widgets.append({"frame": frame, "name": name, "value": value, "unit": unit})
 
         for i, row in enumerate(rows):

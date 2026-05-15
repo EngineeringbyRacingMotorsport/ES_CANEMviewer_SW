@@ -19,7 +19,7 @@ class OverviewView(tk.Frame):
             "REAR ECU",
             "HVAB",
             "HVDB",
-            "TSAL GREEN",
+            "TSAL",
             "SDC RESET",
             "BSPD",
             "BMS",
@@ -33,17 +33,43 @@ class OverviewView(tk.Frame):
         self.body.pack(fill="both", expand=True, padx=12, pady=6)
 
     def refresh(self) -> None:
+        # Add a very visible debug message
+        print("=" * 50)
+        print("DEBUG: UI Views refresh() called")
+        print("=" * 50)
+        
         with self.model.lock():
             model_pcbs = {name: pcb for name, pcb in self.model.vehicle.pcbs.items()}
+
+        # Debug: Check what PCBs are available in the model
+        print(f"DEBUG: Available PCBs in model: {list(model_pcbs.keys())}")
+        
+        # Debug: Check if TSAL is in the model
+        if "TSAL" in model_pcbs:
+            tsal_pcb = model_pcbs["TSAL"]
+            print(f"DEBUG: TSAL PCB found with {len(tsal_pcb.signals)} signals")
+            print(f"DEBUG: TSAL signals: {list(tsal_pcb.signals.keys())}")
+        else:
+            print("DEBUG: TSAL PCB NOT found in model")
 
         pcb_names = list(self.default_pcbs)
         for extra_name in model_pcbs.keys():
             if extra_name not in pcb_names:
                 pcb_names.append(extra_name)
 
+        # Debug: Check final PCB names list
+        print(f"DEBUG: Final PCB names list: {pcb_names}")
+
         active_names = set(pcb_names)
         for i, pcb_name in enumerate(pcb_names):
             pcb = model_pcbs.get(pcb_name)
+            
+            # Debug: Check each PCB being processed
+            if pcb_name == "TSAL":
+                print(f"DEBUG: Processing TSAL in UI, pcb exists: {pcb is not None}")
+                if pcb:
+                    print(f"DEBUG: TSAL status: {pcb.status}, signals count: {len(pcb.signals)}")
+            
             if pcb_name not in self.cards:
                 self.cards[pcb_name] = self._create_card(pcb_name)
             card_info = self.cards[pcb_name]

@@ -88,6 +88,11 @@ class TelemetryPipeline:
                 continue
 
             pcb_name, sig_name, value, unit, description, ts = self._normalize_item(item)
+            
+            # Debug: Check if TSAL data is being processed
+            if pcb_name == "TSAL":
+                print(f"DEBUG: Pipeline processing TSAL {sig_name} = {value}")
+            
             cfg = self._config_for(pcb_name, sig_name)
             sig = self.model.update_signal(
                 pcb_name=pcb_name,
@@ -159,7 +164,19 @@ class TelemetryPipeline:
             # SDC signals
             "SDC.SpSHU": SignalConfig(min_valid=0.0, max_valid=5000.0, timeout_s=0.5),
             
-            # TSAL signals (removed specific timeout to use default)
+            # TSAL signals
+            "TSAL.TpDIGspre": SignalConfig(min_valid=0.0, max_valid=1.0, timeout_s=0.5),
+            "TSAL.TpDIGsairp": SignalConfig(min_valid=0.0, max_valid=1.0, timeout_s=0.5),
+            "TSAL.TpDIGsairn": SignalConfig(min_valid=0.0, max_valid=1.0, timeout_s=0.5),
+            "TSAL.TpDIGipre": SignalConfig(min_valid=0.0, max_valid=1.0, timeout_s=0.5),
+            "TSAL.TpDIGiairp": SignalConfig(min_valid=0.0, max_valid=1.0, timeout_s=0.5),
+            "TSAL.TpDIGiairn": SignalConfig(min_valid=0.0, max_valid=1.0, timeout_s=0.5),
+            "TSAL.TpTHRhv": SignalConfig(min_valid=0.0, max_valid=1.0, timeout_s=0.5),
+            "TSAL.TpERRscs": SignalConfig(min_valid=0.0, max_valid=1.0, timeout_s=0.5),
+            "TSAL.TpTHRdis": SignalConfig(min_valid=0.0, max_valid=1.0, timeout_s=0.5),
+            "TSAL.TpLCH": SignalConfig(min_valid=0.0, max_valid=1.0, timeout_s=0.5),
+            "TSAL.TpINTled": SignalConfig(min_valid=0.0, max_valid=1.0, timeout_s=0.5),
+            
             # FrontECU.FpSHU and RearECU.RpSHU (old references)
             "FrontECU.FpSHU": SignalConfig(min_valid=0.0, max_valid=5000.0, timeout_s=0.5),
             "RearECU.RpSHU": SignalConfig(min_valid=0.0, max_valid=5000.0, timeout_s=0.5),

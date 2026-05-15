@@ -32,6 +32,7 @@ class VectorCANReader(threading.Thread):
                 bitrate=self.bitrate,
                 app_name=self.app_name,
             )
+            print(f"DEBUG: VectorCANReader connected to channel {self.channel}")
         except Exception as e:
             print(f"VectorCANReader: Error creant bus: {e}")
             return
@@ -40,6 +41,10 @@ class VectorCANReader(threading.Thread):
             msg = bus.recv(timeout=0.05)  # Canviat a 50ms
             if msg is None:
                 continue
+            
+            # Debug: Check if TSAL message is being received
+            if msg.arbitration_id == 1280:  # TSAL ID
+                print(f"DEBUG: TSAL message received! ID={msg.arbitration_id}, data={msg.data.hex()}")
             
             try:
                 self.output_queue.put_nowait(msg)
@@ -108,11 +113,8 @@ class MockCANReader(threading.Thread):
                 ("HVAB", "ApTHRhv", 1.0, "", "HV threshold"),
                 ("HVAB", "ApSHU", 1500.0 + 200.0 * _sin(t, 0.3), "mA", "HVAB current"),
                 
-                # TSAL (ID 1280)
-                ("TSAL", "TpDIGspre", 1.0 if int(t) % 12 < 10 else 0.0, "", "Precharge relay"),
-                ("TSAL", "TpDIGsairp", 1.0 if int(t) % 20 < 18 else 0.0, "", "Air positive relay"),
-                ("TSAL", "TpDIGsairn", 1.0 if int(t) % 20 < 18 else 0.0, "", "Air negative relay"),
-                ("TSAL", "TpTHRhv", 1.0, "", "TSAL HV threshold"),
+                # TSAL (ID 1280) - REMOVED to avoid interference with real CAN data
+                # If real CAN data is being received, demo data should not be generated
                 
                 # SDC (ID 1536)
                 ("SDC", "SpERRbms", 0.0, "", "SDC BMS error"),
