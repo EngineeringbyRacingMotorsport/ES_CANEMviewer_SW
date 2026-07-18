@@ -43,7 +43,14 @@ BO_ 3221225472 VECTOR__INDEPENDENT_SIG_MSG: 0 Vector__XXX
  SG_ SpERRbimd : 0|1@1+ (1,0) [0|1] "" Vector__XXX
 
 BO_ 259 InverterTX: 8 Inverter
- SG_ Vout m73 : 16|16@1+ (1,0) [0|65535] "" Vector__XXX
+ SG_ iWarn m143 : 24|16@1+ (1,0) [0|65535] "" Vector__XXX
+ SG_ iVout m138 : 8|16@1+ (1,0) [0|4000] "" Vector__XXX
+ SG_ iTmot m73 : 8|16@1+ (1,0) [0|32767] "" Vector__XXX
+ SG_ iTinv m74 : 8|16@1+ (1,0) [0|32767] "" Vector__XXX
+ SG_ iRPM m48 : 8|16@1+ (1,0) [0|32767] "" Vector__XXX
+ SG_ iPar m160 : 8|16@1- (1,0) [-32768|32767] "" Vector__XXX
+ SG_ iIout m72 : 8|16@1+ (1,0) [0|2000] "" Vector__XXX
+ SG_ iErr m143 : 8|16@1+ (1,0) [0|65535] "" Vector__XXX
  SG_ RegID M : 0|8@1+ (1,0) [0|255] "" Vector__XXX
 
 BO_ 58 IMD_Info_ITSystem: 8 IMD
