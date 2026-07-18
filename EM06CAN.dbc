@@ -55,11 +55,19 @@ BO_ 259 InverterTX: 8 Inverter
 
 BO_ 58 IMD_Info_ITSystem: 8 IMD
 
-BO_ 57 IMD_Info_Voltage: 8 IMD
+BO_ 57 IMD_Info_Voltage: 6 IMD
+ SG_ imdHVsystvolt : 32|16@1+ (0.05,-1606.4) [-1606.4|1670.35] "V" Vector__XXX
+ SG_ imdHVposearth : 16|16@1+ (0.05,-1606.4) [-1606.4|1670.35] "V" Vector__XXX
+ SG_ imdHVnegerth : 0|16@1+ (0.05,-1606.4) [-1606.4|1670.35] "V" Vector__XXX
 
 BO_ 56 IMD_Info_IsolationDetail: 8 IMD
 
 BO_ 55 IMD_Info_General: 8 IMD
+ SG_ imdWarningsalarms : 32|16@1+ (1,0) [0|65535] "" Vector__XXX
+ SG_ imdRisostatus : 16|8@1+ (1,0) [0|255] "" Vector__XXX
+ SG_ imdRisocorrect : 0|16@1+ (1,0) [0|65535] "" Vector__XXX
+ SG_ imdMeascount : 24|8@1+ (1,0) [0|255] "" Vector__XXX
+ SG_ imdDeviceactivi : 48|8@1+ (1,0) [0|255] "" Vector__XXX
 
 BO_ 258 InverterRX: 8 Inverter
  SG_ FpANLRpot : 8|16@1- (1,0) [-32768|32767] "" Vector__XXX
