@@ -37,13 +37,14 @@ BU_: BMS Inverter IMD FrontECU RearECU HVAB HVDB TSAL SDC
 
 
 BO_ 3221225472 VECTOR__INDEPENDENT_SIG_MSG: 0 Vector__XXX
- SG_ RegID : 0|8@1+ (1,0) [0|255] "" Vector__XXX
  SG_ FpANLLpot : 0|16@1- (1,0) [-32768|32767] "" Vector__XXX
  SG_ FpINTpre : 0|1@1+ (1,0) [0|1] "" Vector__XXX
  SG_ SpERRbms : 0|1@1+ (1,0) [0|1] "" Vector__XXX
  SG_ SpERRbimd : 0|1@1+ (1,0) [0|1] "" Vector__XXX
 
 BO_ 259 InverterTX: 8 Inverter
+ SG_ Vout m73 : 16|16@1+ (1,0) [0|65535] "" Vector__XXX
+ SG_ RegID M : 0|8@1+ (1,0) [0|255] "" Vector__XXX
 
 BO_ 58 IMD_Info_ITSystem: 8 IMD
 
