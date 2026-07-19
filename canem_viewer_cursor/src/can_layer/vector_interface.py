@@ -4,6 +4,7 @@ import random
 import threading
 import time
 from queue import Queue
+from typing import Optional, Tuple
 
 
 class VectorCANReader(threading.Thread):
@@ -32,24 +33,61 @@ class VectorCANReader(threading.Thread):
                 bitrate=self.bitrate,
                 app_name=self.app_name,
             )
-            print(f"DEBUG: VectorCANReader connected to channel {self.channel}")
         except Exception as e:
             print(f"VectorCANReader: Error creant bus: {e}")
             return
 
         while not self.stop_event.is_set():
-            msg = bus.recv(timeout=0.05)  # Canviat a 50ms
+            msg = bus.recv(timeout=0.05)
             if msg is None:
                 continue
-            
-            # Debug: Check if TSAL message is being received
-            if msg.arbitration_id == 1280:  # TSAL ID
-                print(f"DEBUG: TSAL message received! ID={msg.arbitration_id}, data={msg.data.hex()}")
-            
+
             try:
                 self.output_queue.put_nowait(msg)
             except Exception:
                 pass
+        
+        bus.shutdown()
+
+
+class PCANUSBReader(threading.Thread):
+    def __init__(
+        self,
+        output_queue: Queue,
+        stop_event: threading.Event,
+        channel: str = "PCAN_USBBUS1",
+        bitrate: int = 250000,
+    ) -> None:
+        super().__init__(daemon=True)
+        self.output_queue = output_queue
+        self.stop_event = stop_event
+        self.channel = channel
+        self.bitrate = bitrate
+
+    def run(self) -> None:
+        import can
+
+        try:
+            bus = can.interface.Bus(
+                bustype="pcan",
+                channel=self.channel,
+                bitrate=self.bitrate,
+            )
+        except Exception as e:
+            print(f"PCANUSBReader: Error creant bus: {e}")
+            return
+
+        while not self.stop_event.is_set():
+            msg = bus.recv(timeout=0.05)
+            if msg is None:
+                continue
+
+            try:
+                self.output_queue.put_nowait(msg)
+            except Exception:
+                pass
+        
+        bus.shutdown()
 
 
 class NoVectorReader(threading.Thread):
@@ -135,3 +173,138 @@ def _sin(x: float, freq: float) -> float:
     import math
 
     return math.sin(2.0 * math.pi * freq * x) + random.uniform(-0.02, 0.02)
+
+
+def detect_vector_available(channel: int = 0, app_name: str = "CANalyzer") -> bool:
+    """
+    Detecta si el hardware Vector està disponible i accessible.
+    
+    Args:
+        channel: Canal Vector a provar (per defecte: 0)
+        app_name: Nom de l'aplicació Vector
+        
+    Returns:
+        True si Vector és accessible, False en altres casos
+    """
+    try:
+        import can
+        bus = can.interface.Bus(
+            bustype="vector",
+            channel=channel,
+            bitrate=250000,
+            app_name=app_name,
+        )
+        bus.shutdown()
+        print("✓ Vector hardware detectat i disponible")
+        return True
+    except Exception as e:
+        print(f"✗ Vector no disponible: {e}")
+        return False
+
+
+def detect_pcan_available(channel: str = "PCAN_USBBUS1") -> bool:
+    """
+    Detecta si el hardware PCAN-USB està disponible i accessible.
+    
+    Args:
+        channel: Canal PCAN a provar (per defecte: PCAN_USBBUS1)
+        
+    Returns:
+        True si PCAN és accessible, False en altres casos
+    """
+    try:
+        import can
+        print(f"  Intentant connectar a {channel}...")
+        bus = can.interface.Bus(
+            bustype="pcan",
+            channel=channel,
+            bitrate=250000,
+        )
+        bus.shutdown()
+        print("✓ PCAN-USB hardware detectat i disponible")
+        return True
+    except Exception as e:
+        print(f"✗ PCAN no disponible en {channel}: {type(e).__name__}: {e}")
+        return False
+
+
+def list_pcan_channels() -> list:
+    """
+    Llista tots els canals PCAN disponibles al sistema.
+    
+    Returns:
+        Llista de canals PCAN disponibles
+    """
+    possible_channels = [
+        "PCAN_USBBUS1",
+        "PCAN_USBBUS2",
+        "PCAN_USBBUS3",
+        "PCAN_USBBUS4",
+        "PCAN_USBBUS5",
+        "PCAN_USBBUS6",
+        "PCAN_USBBUS7",
+        "PCAN_USBBUS8",
+    ]
+    
+    available = []
+    for channel in possible_channels:
+        try:
+            import can
+            bus = can.interface.Bus(
+                bustype="pcan",
+                channel=channel,
+                bitrate=250000,
+                timeout=0.5,
+            )
+            bus.shutdown()
+            available.append(channel)
+        except Exception:
+            pass
+    
+    return available
+
+
+def auto_detect_interface(
+    vector_channel: int = 0,
+    vector_app_name: str = "CANalyzer",
+    pcan_channel: str = "PCAN_USBBUS1",
+) -> Tuple[str, dict]:
+    """
+    Detecta automàticament quin interface CAN està disponible.
+    Prioritat: PCAN > Vector > Cap hardware
+    
+    Args:
+        vector_channel: Canal Vector a provar
+        vector_app_name: Nom aplicació Vector
+        pcan_channel: Canal PCAN a provar
+        
+    Returns:
+        Tupla (interface, config) on:
+        - interface: "pcan", "vector" o "none"
+        - config: diccionari amb paràmetres de configuració
+    """
+    print("\n" + "=" * 60)
+    print("DETECCIÓ AUTOMÀTICA D'INTERFACES CAN")
+    print("=" * 60)
+    
+    # Provar PCAN primer
+    print("\n[1/2] Provant PCAN-USB...")
+    if detect_pcan_available(pcan_channel):
+        return "pcan", {
+            "pcan_channel": pcan_channel,
+            "pcan_bitrate": 250000,
+        }
+    
+    # Provar Vector
+    print("\n[2/2] Provant Vector...")
+    if detect_vector_available(vector_channel, vector_app_name):
+        return "vector", {
+            "vector_channel": vector_channel,
+            "vector_bitrate": 250000,
+            "vector_app_name": vector_app_name,
+        }
+    
+    # Cap hardware disponible
+    print("\n✗ Cap hardware CAN detectat. Executant en mode sense hardware...")
+    print("=" * 60 + "\n")
+    return "none", {}

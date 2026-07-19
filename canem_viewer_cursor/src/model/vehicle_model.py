@@ -128,15 +128,7 @@ class VehicleModel:
     ) -> SignalState:
         ts = timestamp if timestamp is not None else time.time()
         with self._lock:
-            # Debug: Check if TSAL PCB is being created/updated
-            if pcb_name == "TSAL":
-                print(f"DEBUG: Updating TSAL signal {signal_name} = {value}")
-            
             pcb = self.vehicle.pcbs.setdefault(pcb_name, PCBState(name=pcb_name))
-            
-            # Debug: Check if TSAL PCB exists after creation
-            if pcb_name == "TSAL":
-                print(f"DEBUG: TSAL PCB exists with {len(pcb.signals)} signals")
             
             signal = pcb.signals.setdefault(
                 signal_name,

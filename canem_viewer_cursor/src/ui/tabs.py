@@ -1005,417 +1005,415 @@ class TemperatureTab(tk.Frame):
                     sub.configure(bg=bg, fg=fg)
 
 
-class SensorTab(tk.Frame):
-    def __init__(self, parent: tk.Widget, model: VehicleModel):
-        super().__init__(parent, bg=DARK_BG)
-        self.model = model
-        self.demo_enabled = True
-        self._dark_mode = False
-        self._demo_phase = 0.0
-        self._motor_flash = False
-        self.grid_columnconfigure(0, weight=2)
-        self.grid_columnconfigure(1, weight=2)
-        self.grid_rowconfigure(0, weight=1)
-
-        self.left = tk.Frame(self, bg=CARD_BG, highlightbackground=CARD_BORDER, highlightthickness=1)
-        self.left.grid(row=0, column=0, sticky="nsew", padx=(10, 6), pady=10)
-        self.right = tk.Frame(self, bg=CARD_BG, highlightbackground=CARD_BORDER, highlightthickness=1)
-        self.right.grid(row=0, column=1, sticky="nsew", padx=(6, 10), pady=10)
-        self.left.grid_columnconfigure(0, weight=1)
-        self.left.grid_columnconfigure(1, weight=1)
-        self.right.grid_columnconfigure(0, weight=1)
-        self.right.grid_rowconfigure(0, weight=1)
-        self.right.grid_rowconfigure(1, weight=1)
-
-        self.location_trees: dict[str, ttk.Treeview] = {}
-        for idx, loc in enumerate(["RL", "RR", "FL", "FR"]):
-            r, c = idx // 2, idx % 2
-            holder = self._build_tree_container(self.left, loc)
-            holder.grid(row=r, column=c, sticky="nsew", padx=8, pady=8)
-            self.location_trees[loc] = holder.tree  # type: ignore[attr-defined]
-
-        self.temp_holder = self._build_tree_container(self.right, "Temperatures")
-        self.temp_holder.grid(row=0, column=0, sticky="nsew", padx=8, pady=(8, 4))
-        self.pedal_holder = self._build_tree_container(self.right, "Pedals i Fre")
-        self.pedal_holder.grid(row=1, column=0, sticky="nsew", padx=8, pady=(4, 8))
-
-        self.bars: dict[str, tuple[tk.Canvas, int, int, bool]] = {}
-        self._add_section_bars(self.temp_holder, [("cool_in", "T. Inv In", False), ("cool_out", "T. Inv Out", False), ("motor_temp", "T. Motor", False)])
-        self._add_section_bars(self.pedal_holder, [("acc1", "Accel 1 (%)", False), ("acc2", "Accel 2 (%)", False), ("brake_pct", "Fre (%)", False), ("brake_bar", "Pressió Fre (bar)", False), ("brake_plausibility", "Plausibilitat Fre", False), ("current_plausibility", "Plausibilitat Corrent", False)])
-
-        self._set_tree_theme(True)
-
-    def update_ui(self) -> None:
-        data = self._collect_data()
-        for loc in ["RL", "RR", "FL", "FR"]:
-            vel_key = f"wheel_{loc.lower()}"
-            susp_key = f"susp_{loc.lower()}"
-            rows = [
-                ("Velocitat", f"{data[vel_key]:.1f} km/h", self._bar_text(data[vel_key], 0, 80, centered=False)),
-                ("Suspensió", f"{data[susp_key]:.1f} %", self._bar_text(data[susp_key], 0, 100, centered=True)),
-            ]
-            self._fill_tree(self.location_trees[loc], rows)
-
-        self._fill_tree(
-            self.temp_holder.tree,  # type: ignore[attr-defined]
-            [
-                ("Inv In", f"{data['cool_in']:.1f} C", self._bar_text(data["cool_in"], 0, 90, centered=False)),
-                ("Inv Out", f"{data['cool_out']:.1f} C", self._bar_text(data["cool_out"], 0, 90, centered=False)),
-                ("Motor", f"{data['motor_temp']:.1f} C", self._bar_text(data["motor_temp"], 0, 120, centered=False)),
-            ],
-        )
-        self._fill_tree(
-            self.pedal_holder.tree,  # type: ignore[attr-defined]
-            [
-                ("Accel 1", f"{data['acc1']:.1f} %", self._bar_text(data["acc1"], 0, 100, centered=False)),
-                ("Accel 2", f"{data['acc2']:.1f} %", self._bar_text(data["acc2"], 0, 100, centered=False)),
-                ("Fre %", f"{data['brake_pct']:.1f} %", self._bar_text(data["brake_pct"], 0, 100, centered=False)),
-                ("Fre bar", f"{data['brake_pressure']:.1f} bar", self._bar_text(data["brake_pressure"], 0, 80, centered=False)),
-                ("Plausibilitat Fre", f"{data['brake_plausibility']:.1f}", self._bar_text(data["brake_plausibility"], 0, 1, centered=False)),
-                ("Plausibilitat Corrent", f"{data['current_plausibility']:.1f}", self._bar_text(data["current_plausibility"], 0, 1, centered=False)),
-            ],
-        )
-
-        self._update_bar("cool_in", data["cool_in"], 0, 90, "#5aa9ff")
-        self._update_bar("cool_out", data["cool_out"], 0, 90, "#5aa9ff")
-        motor_color = self._motor_temp_color(data["motor_temp"])
-        self._update_bar("motor_temp", data["motor_temp"], 0, 120, motor_color)
-        self._update_bar("acc1", data["acc1"], 0, 100, "#57d68d")
-        self._update_bar("acc2", data["acc2"], 0, 100, "#57d68d")
-        self._update_bar("brake_pct", data["brake_pct"], 0, 100, "#ff5b5b")
-        self._update_bar("brake_bar", data["brake_pressure"], 0, 80, "#ff8a8a")
-        self._update_bar("brake_plausibility", data["brake_plausibility"], 0, 1, "#ffd700")
-        self._update_bar("current_plausibility", data["current_plausibility"], 0, 1, "#ff9500")
-
-    def _build_tree_container(self, parent: tk.Widget, title: str) -> tk.Frame:
-        frame = tk.Frame(parent, bg=CARD_BG, highlightbackground=CARD_BORDER, highlightthickness=1)
-        tk.Label(frame, text=title, bg=CARD_BG, fg="#67d7c5", font=("Roboto", 10, "bold")).pack(anchor="w", padx=8, pady=(6, 4))
-        tree = ttk.Treeview(frame, columns=("loc", "value", "bar"), show="headings", height=4, style="PCB.Treeview")
-        tree.heading("loc", text="Camp")
-        tree.heading("value", text="Valor")
-        tree.heading("bar", text="Barra")
-        tree.column("loc", width=70, anchor="w")
-        tree.column("value", width=85, anchor="e")
-        tree.column("bar", width=90, anchor="w")
-        tree.pack(fill="x", padx=6, pady=(0, 6))
-        frame.tree = tree  # type: ignore[attr-defined]
-        return frame
-
-    @staticmethod
-    def _fill_tree(tree: ttk.Treeview, rows: list[tuple[str, str, str]]) -> None:
-        for iid in tree.get_children():
-            tree.delete(iid)
-        for loc, val, bar in rows:
-            tree.insert("", "end", values=(loc, val, bar))
-
-    def _add_section_bars(self, holder: tk.Frame, specs: list[tuple[str, str, bool]]) -> None:
-        bars_panel = tk.Frame(holder, bg=CARD_BG)
-        bars_panel.pack(fill="x", padx=6, pady=(0, 6))
-        for row, (key, label, centered) in enumerate(specs):
-            tk.Label(bars_panel, text=label, bg=CARD_BG, fg=TEXT_MAIN, font=("Roboto", 9)).grid(row=row, column=0, sticky="w", pady=3)
-            c = tk.Canvas(bars_panel, width=170, height=14, bg=CARD_BG, highlightthickness=0)
-            c.grid(row=row, column=1, sticky="e", pady=3, padx=(8, 0))
-            bg = c.create_rectangle(2, 2, 168, 12, outline="#555555", fill="#1a1a1a")
-            fill = c.create_rectangle(3, 3, 3, 11, outline="", fill="#57d68d")
-            if centered:
-                c.create_line(85, 1, 85, 13, fill="#8a8a8a", dash=(2, 2))
-            self.bars[key] = (c, bg, fill, centered)
-
-    def _update_bar(self, key: str, value: float, vmin: float, vmax: float, color: str) -> None:
-        c, bg, fill, centered = self.bars[key]
-        x1, y1, x2, y2 = c.coords(bg)
-        ratio = 0.0 if vmax <= vmin else max(0.0, min(1.0, (value - vmin) / (vmax - vmin)))
-        if centered:
-            mid = (x1 + x2) / 2
-            delta = ratio - 0.5
-            if delta >= 0:
-                c.coords(fill, mid, y1 + 1, mid + (x2 - mid - 1) * (delta / 0.5), y2 - 1)
-            else:
-                c.coords(fill, mid + (mid - x1 - 1) * (delta / 0.5), y1 + 1, mid, y2 - 1)
-        else:
-            c.coords(fill, x1 + 1, y1 + 1, x1 + 1 + (x2 - x1 - 2) * ratio, y2 - 1)
-        c.itemconfigure(fill, fill=color)
-
-    def _collect_data(self) -> dict[str, float]:
-        keys = {
-            "wheel_fl": [("FRONT ECU", "wheel_speed_fl"), ("DYNAMICS", "vel_fl")],
-            "wheel_fr": [("FRONT ECU", "wheel_speed_fr"), ("DYNAMICS", "vel_fr")],
-            "wheel_rl": [("REAR ECU", "wheel_speed_rl"), ("DYNAMICS", "vel_rl")],
-            "wheel_rr": [("REAR ECU", "wheel_speed_rr"), ("DYNAMICS", "vel_rr")],
-            "cool_in": [("INVERTER", "coolant_temp_in"), ("INV", "coolant_in")],
-            "cool_out": [("INVERTER", "coolant_temp_out"), ("INV", "coolant_out")],
-            "motor_temp": [("INVERTER", "motor_temp"), ("INV", "motor_temp")],
-            "brake_pressure": [("BSPD", "brake_pressure"), ("FRONT ECU", "brake_pressure")],
-            "brake_pct": [("BSPD", "brake_pct"), ("FRONT ECU", "brake_pct")],
-            "brake_plausibility": [("HVDB", "BpTHRbrake")],
-            "current_plausibility": [("HVDB", "BpTHRcurrent")],
-            "acc1": [("FRONT ECU", "accel_sensor_1"), ("VCU", "accel_1")],
-            "acc2": [("FRONT ECU", "accel_sensor_2"), ("VCU", "accel_2")],
-            "susp_fl": [("FRONT ECU", "susp_fl"), ("DYNAMICS", "susp_fl")],
-            "susp_fr": [("FRONT ECU", "susp_fr"), ("DYNAMICS", "susp_fr")],
-            "susp_rl": [("REAR ECU", "susp_rl"), ("DYNAMICS", "susp_rl")],
-            "susp_rr": [("REAR ECU", "susp_rr"), ("DYNAMICS", "susp_rr")],
-            # FrontECU Status signals
-            "front_ecu_bms_int": [("FRONT ECU", "FpINTebms")],
-            "front_ecu_imd_int": [("FRONT ECU", "FpINTeimd")],
-            "front_ecu_ts_off": [("FRONT ECU", "FpINTtsoff")],
-            "front_ecu_sdc_bms": [("FRONT ECU", "FpINTsbms")],
-            "front_ecu_precharge": [("FRONT ECU", "FpINTpre")],
-            "front_ecu_r2d": [("FRONT ECU", "FpINTr2d")],
-            "front_ecu_menu": [("FRONT ECU", "FpINTmenu")],
-            "front_ecu_microsd": [("FRONT ECU", "FpDIGmicrosd")],
-            "front_ecu_sdc_inertia": [("FRONT ECU", "FpSDCinertia")],
-            "front_ecu_sdc_bots": [("FRONT ECU", "FpSDCbots")],
-            "front_ecu_sdc_csdb": [("FRONT ECU", "FpSDCcsdb")],
-            "front_ecu_apps_err": [("FRONT ECU", "FpERRapps")],
-            "front_ecu_refri_mode": [("FRONT ECU", "FpDIGrefri")],
-            "front_ecu_r2d_status": [("FRONT ECU", "FpDIGr2d")],
-            # RearECU Status signals
-            "rear_ecu_sdc_hvd": [("REAR ECU", "RpSDChvd")],
-            "rear_ecu_sdc_tsms": [("REAR ECU", "RpSDCtsms")],
-            "rear_ecu_sdc_rsdb": [("REAR ECU", "RpSDCrsdb")],
-            "rear_ecu_sdc_lsdb": [("REAR ECU", "RpSDClsdb")],
-            "rear_ecu_brake_led_r": [("REAR ECU", "RpSTAbrkledR")],
-            "rear_ecu_brake_led_g": [("REAR ECU", "RpSTAbrkledG")],
-            "rear_ecu_brake_led_b": [("REAR ECU", "RpSTAbrkledB")],
-            "rear_ecu_refri_accu": [("REAR ECU", "RpSTArefriaccu")],
-            "rear_ecu_refri_mot": [("REAR ECU", "RpSTArefrimot")],
-            "rear_ecu_refri_inv": [("REAR ECU", "RpSTArefriinv")],
-            # HVAB signals
-            "hvab_hv_status": [("HVAB", "ApTHRhv")],
-            "hvab_current": [("HVAB", "ApSHU")],
-            # HVDB additional signals
-            "hvdb_err_plaus": [("HVDB", "BpERRplaus")],
-            "hvdb_err_timer": [("HVDB", "BpERRtimer")],
-            "hvdb_sdc_status": [("HVDB", "BpSDC")],
-            "hvdb_driver_sdc": [("HVDB", "DpSDC")],
-            "hvdb_driver_hv": [("HVDB", "DpTHRhv")],
-            "hvdb_lch_discharge": [("HVDB", "DpLCHdischarge")],
-            "hvdb_interlock1": [("HVDB", "DpSDCintlck1")],
-            "hvdb_interlock2": [("HVDB", "DpSDCintlck2")],
-            "hvdb_current": [("HVDB", "BpSHU")],
-            "hvdb_driver_current": [("HVDB", "DpSHU")],
-            # TSAL signals
-            "tsal_spre": [("TSAL", "TpDIGspre")],
-            "tsal_sairp": [("TSAL", "TpDIGsairp")],
-            "tsal_sairn": [("TSAL", "TpDIGsairn")],
-            "tsal_ipre": [("TSAL", "TpDIGipre")],
-            "tsal_i_airp": [("TSAL", "TpDIGiairp")],
-            "tsal_i_airn": [("TSAL", "TpDIGiairn")],
-            "tsal_hv_status": [("TSAL", "TpTHRhv")],
-            "tsal_err_scs": [("TSAL", "TpERRscs")],
-            "tsal_thr_dis": [("TSAL", "TpTHRdis")],
-            "tsal_lch": [("TSAL", "TpLCH")],
-            "tsal_led": [("TSAL", "TpINTled")],
-            # SDC additional signals
-            "sdc_bms_err": [("SDC", "SpERRbms")],
-            "sdc_imd_err": [("SDC", "SpERRimd")],
-            "sdc_lch_bms": [("SDC", "SpLCHebms")],
-            "sdc_lch_imd": [("SDC", "SpLCHeimd")],
-            "sdc_reset_button": [("SDC", "SpINTresbut")],
-            "sdc_current": [("SDC", "SpSHU")],
-            # FrontECU sensor signals
-            "front_accel_r_pot": [("FRONT ECU", "FpANLRpot")],
-            "front_accel_l_pot": [("FRONT ECU", "FpANLLpot")],
-            "front_susp_r": [("FRONT ECU", "FpANLRsus")],
-            "front_susp_l": [("FRONT ECU", "FpANLLsus")],
-            "front_speed_r": [("FRONT ECU", "FpDIGRvel")],
-            "front_speed_l": [("FRONT ECU", "FpDIGLvel")],
-            "front_brake_pressure": [("FRONT ECU", "FpANLbrake")],
-            "front_taccu": [("FRONT ECU", "FpANLtaccu")],
-            "front_vaccu": [("FRONT ECU", "FpANLvaccu")],
-            "front_shu": [("FRONT ECU", "FpSHU")],
-            # RearECU sensor signals
-            "rear_susp_r": [("REAR ECU", "RpSIGRsus")],
-            "rear_susp_l": [("REAR ECU", "RpSIGLsus")],
-            "rear_speed_r": [("REAR ECU", "RpSIGRspeed")],
-            "rear_speed_l": [("REAR ECU", "RpSIGLspeed")],
-            "rear_temp_m": [("REAR ECU", "RpSIGItempM")],
-            "rear_temp_o_m": [("REAR ECU", "RpSIGOtempM")],
-            "rear_temp_m_i": [("REAR ECU", "RpSIGItempI")],
-            "rear_temp_o_i": [("REAR ECU", "RpSIGOtempI")],
-            "rear_voltage": [("REAR ECU", "RpSIGlvs")],
-            "rear_shu": [("REAR ECU", "RpSHU")]
-        }
-        out: dict[str, float] = {}
-        with self.model.lock():
-            for k, aliases in keys.items():
-                v = None
-                for pcb, sig in aliases:
-                    p = self.model.vehicle.pcbs.get(pcb)
-                    if p and sig in p.signals:
-                        v = p.signals[sig].value
-                        break
-                out[k] = float(v) if v is not None else float("nan")
-        self._demo_phase += 0.25
-        demo = {
-            "wheel_fl": 36 + 4*math.sin(self._demo_phase*0.3),
-            "wheel_fr": 35 + 5*math.sin(self._demo_phase*0.31+0.2),
-            "wheel_rl": 34 + 5*math.sin(self._demo_phase*0.28+0.4),
-            "wheel_rr": 35 + 4*math.sin(self._demo_phase*0.3+0.1),
-            "cool_in": 38 + 2*math.sin(self._demo_phase*0.07),
-            "cool_out": 44 + 2*math.sin(self._demo_phase*0.08),
-            "motor_temp": 56 + 3*math.sin(self._demo_phase*0.06),
-            "brake_pressure": 20 + 15*math.sin(self._demo_phase*0.09),
-            "brake_pct": 50 + 45*math.sin(self._demo_phase*0.09),
-            "brake_plausibility": 1 + math.sin(self._demo_phase*0.15),
-            "current_plausibility": 1 + math.sin(self._demo_phase*0.13),
-            "acc1": 50 + 45*math.sin(self._demo_phase*0.11),
-            "acc2": 50 + 45*math.sin(self._demo_phase*0.12+0.2),
-            "susp_fl": 46 + 8*math.sin(self._demo_phase*0.25),
-            "susp_fr": 49 + 7*math.sin(self._demo_phase*0.26+0.3),
-            "susp_rl": 51 + 6*math.sin(self._demo_phase*0.24+0.5),
-            "susp_rr": 48 + 7*math.sin(self._demo_phase*0.23+0.1),
-            # FrontECU Status demo values
-            "front_ecu_bms_int": math.sin(self._demo_phase*0.08) > 0,
-            "front_ecu_imd_int": math.sin(self._demo_phase*0.09) > 0,
-            "front_ecu_ts_off": math.sin(self._demo_phase*0.07) > 0,
-            "front_ecu_sdc_bms": math.sin(self._demo_phase*0.06) > 0,
-            "front_ecu_precharge": math.sin(self._demo_phase*0.05) > 0,
-            "front_ecu_r2d": math.sin(self._demo_phase*0.04) > 0,
-            "front_ecu_menu": math.sin(self._demo_phase*0.03) > 0,
-            "front_ecu_microsd": math.sin(self._demo_phase*0.02) > 0,
-            "front_ecu_sdc_inertia": math.sin(self._demo_phase*0.085) > 0,
-            "front_ecu_sdc_bots": math.sin(self._demo_phase*0.095) > 0,
-            "front_ecu_sdc_csdb": math.sin(self._demo_phase*0.105) > 0,
-            "front_ecu_apps_err": math.sin(self._demo_phase*0.115) > 0,
-            "front_ecu_refri_mode": math.sin(self._demo_phase*0.125) > 0,
-            "front_ecu_r2d_status": math.sin(self._demo_phase*0.135) > 0,
-            # RearECU Status demo values
-            "rear_ecu_sdc_hvd": math.sin(self._demo_phase*0.08) > 0,
-            "rear_ecu_sdc_tsms": math.sin(self._demo_phase*0.09) > 0,
-            "rear_ecu_sdc_rsdb": math.sin(self._demo_phase*0.07) > 0,
-            "rear_ecu_sdc_lsdb": math.sin(self._demo_phase*0.06) > 0,
-            "rear_ecu_brake_led_r": math.sin(self._demo_phase*0.05) > 0,
-            "rear_ecu_brake_led_g": math.sin(self._demo_phase*0.04) > 0,
-            "rear_ecu_brake_led_b": math.sin(self._demo_phase*0.03) > 0,
-            "rear_ecu_refri_accu": math.sin(self._demo_phase*0.02) > 0,
-            "rear_ecu_refri_mot": math.sin(self._demo_phase*0.025) > 0,
-            "rear_ecu_refri_inv": math.sin(self._demo_phase*0.015) > 0,
-            # HVAB demo values
-            "hvab_hv_status": math.sin(self._demo_phase*0.1) > 0,
-            "hvab_current": 1000 + 500*math.sin(self._demo_phase*0.12),
-            # HVDB additional demo values
-            "hvdb_err_plaus": math.sin(self._demo_phase*0.11) > 0,
-            "hvdb_err_timer": math.sin(self._demo_phase*0.13) > 0,
-            "hvdb_sdc_status": math.sin(self._demo_phase*0.14) > 0,
-            "hvdb_driver_sdc": math.sin(self._demo_phase*0.15) > 0,
-            "hvdb_driver_hv": math.sin(self._demo_phase*0.16) > 0,
-            "hvdb_lch_discharge": math.sin(self._demo_phase*0.17) > 0,
-            "hvdb_interlock1": math.sin(self._demo_phase*0.18) > 0,
-            "hvdb_interlock2": math.sin(self._demo_phase*0.19) > 0,
-            "hvdb_current": 2000 + 1000*math.sin(self._demo_phase*0.21),
-            "hvdb_driver_current": 2500 + 1500*math.sin(self._demo_phase*0.22),
-            # TSAL demo values
-            "tsal_spre": math.sin(self._demo_phase*0.08) > 0,
-            "tsal_sairp": math.sin(self._demo_phase*0.09) > 0,
-            "tsal_sairn": math.sin(self._demo_phase*0.07) > 0,
-            "tsal_ipre": math.sin(self._demo_phase*0.06) > 0,
-            "tsal_i_airp": math.sin(self._demo_phase*0.05) > 0,
-            "tsal_i_airn": math.sin(self._demo_phase*0.04) > 0,
-            "tsal_hv_status": math.sin(self._demo_phase*0.03) > 0,
-            "tsal_err_scs": math.sin(self._demo_phase*0.02) > 0,
-            "tsal_thr_dis": math.sin(self._demo_phase*0.025) > 0,
-            "tsal_lch": math.sin(self._demo_phase*0.015) > 0,
-            "tsal_led": math.sin(self._demo_phase*0.01) > 0,
-            # SDC additional demo values
-            "sdc_bms_err": math.sin(self._demo_phase*0.08) > 0,
-            "sdc_imd_err": math.sin(self._demo_phase*0.09) > 0,
-            "sdc_lch_bms": math.sin(self._demo_phase*0.07) > 0,
-            "sdc_lch_imd": math.sin(self._demo_phase*0.06) > 0,
-            "sdc_reset_button": math.sin(self._demo_phase*0.05) > 0,
-            "sdc_current": 3000 + 2000*math.sin(self._demo_phase*0.23),
-            # FrontECU sensor demo values
-            "front_accel_r_pot": 50 + 50*math.sin(self._demo_phase*0.11),
-            "front_accel_l_pot": 50 + 50*math.sin(self._demo_phase*0.12+0.2),
-            "front_susp_r": 500 + 500*math.sin(self._demo_phase*0.25),
-            "front_susp_l": 500 + 500*math.sin(self._demo_phase*0.26+0.3),
-            "front_speed_r": 45 + 40*math.sin(self._demo_phase*0.27),
-            "front_speed_l": 45 + 40*math.sin(self._demo_phase*0.28+0.1),
-            "front_brake_pressure": 10 + 190*math.sin(self._demo_phase*0.29),
-            "front_taccu": 55 + 45*math.sin(self._demo_phase*0.3),
-            "front_vaccu": 250 + 250*math.sin(self._demo_phase*0.31),
-            "front_shu": 2500 + 2500*math.sin(self._demo_phase*0.32),
-            # RearECU sensor demo values
-            "rear_susp_r": 500 + 500*math.sin(self._demo_phase*0.33),
-            "rear_susp_l": 500 + 500*math.sin(self._demo_phase*0.34+0.1),
-            "rear_speed_r": 45 + 40*math.sin(self._demo_phase*0.35),
-            "rear_speed_l": 45 + 40*math.sin(self._demo_phase*0.36+0.2),
-            "rear_temp_m": 60 + 40*math.sin(self._demo_phase*0.37),
-            "rear_temp_o_m": 65 + 35*math.sin(self._demo_phase*0.38),
-            "rear_temp_m_i": 62 + 38*math.sin(self._demo_phase*0.39),
-            "rear_temp_o_i": 63 + 37*math.sin(self._demo_phase*0.4),
-            "rear_voltage": 12 + 88*math.sin(self._demo_phase*0.41),
-            "rear_shu": 2000 + 3000*math.sin(self._demo_phase*0.42)
-        }
-        for k, v in out.items():
-            if v != v:
-                out[k] = demo[k] if self.demo_enabled else 0.0
-        out["avg_speed"] = (out["wheel_fl"] + out["wheel_fr"] + out["wheel_rl"] + out["wheel_rr"]) / 4.0
-        out["avg_temp"] = (out["cool_in"] + out["cool_out"] + out["motor_temp"]) / 3.0
-        return out
-
-    def _motor_temp_color(self, t: float) -> str:
-        if t < 75:
-            return TEXT_MAIN if self._dark_mode else "#1a1a1a"
-        if t < 95:
-            return "#ffd166"
-        self._motor_flash = not self._motor_flash
-        return "#ff4d4d" if self._motor_flash else "#772222"
-
-    def set_demo_enabled(self, enabled: bool) -> None:
-        self.demo_enabled = enabled
-
-    def set_dark_mode(self, enabled: bool) -> None:
-        self._dark_mode = enabled
-        bg = DARK_BG if enabled else "#f0f0f0"
-        card = CARD_BG if enabled else "white"
-        self.configure(bg=bg)
-        self.left.configure(bg=card, highlightbackground=CARD_BORDER if enabled else "#d0d0d0")
-        self.right.configure(bg=card, highlightbackground=CARD_BORDER if enabled else "#d0d0d0")
-        for frame in [self.left, self.right]:
-            for child in frame.winfo_children():
-                if isinstance(child, tk.Frame):
-                    child.configure(bg=card, highlightbackground=CARD_BORDER if enabled else "#d0d0d0")
-                    for sub in child.winfo_children():
-                        if isinstance(sub, tk.Label):
-                            sub.configure(bg=card, fg=TEXT_MAIN if enabled else "#1a1a1a")
-                        elif isinstance(sub, tk.Canvas):
-                            sub.configure(bg=card)
-        self._set_tree_theme(enabled)
-
-    def _set_tree_theme(self, enabled: bool) -> None:
-        style = ttk.Style()
-        if enabled:
-            style.configure("Sensor.Treeview", background="#2f2f2f", fieldbackground="#2f2f2f", foreground="#f2f2f2")
-            style.configure("Sensor.Treeview.Heading", background="#3a3a3a", foreground="#d8d8d8")
-        else:
-            style.configure("Sensor.Treeview", background="white", fieldbackground="white", foreground="#1a1a1a")
-            style.configure("Sensor.Treeview.Heading", background="#e0e0e0", foreground="#1a1a1a")
-        for holder in [*self.location_trees.values(), self.temp_holder.tree, self.pedal_holder.tree]:  # type: ignore[attr-defined]
-            holder.configure(style="Sensor.Treeview")
-
-    @staticmethod
-    def _bar_text(value: float, vmin: float, vmax: float, centered: bool) -> str:
-        n = 10
-        if vmax <= vmin:
-            return "-" * n
-        ratio = max(0.0, min(1.0, (value - vmin) / (vmax - vmin)))
-        if centered:
-            mid = n // 2
-            delta = ratio - 0.5
-            cells = [" "] * n
-            cells[mid] = "|"
-            span = int(abs(delta) * 2 * mid)
-            if delta >= 0:
-                for i in range(mid + 1, min(n, mid + 1 + span)):
-                    cells[i] = "\u2588"
-            else:
-                for i in range(max(0, mid - span), mid):
-                    cells[i] = "\u2588"
-            return "".join(cells)
-        filled = int(ratio * n)
-        return "\u2588" * filled + "\u2591" * (n - filled)
+# SensorTab class disabled - removed from application
+# class SensorTab(tk.Frame):
+#     def __init__(self, parent: tk.Widget, model: VehicleModel):
+#         super().__init__(parent, bg=DARK_BG)
+#         self.model = model
+#         self.demo_enabled = True
+#         self._dark_mode = False
+#         self._demo_phase = 0.0
+#         self._motor_flash = False
+#         self.grid_columnconfigure(0, weight=2)
+#         self.grid_columnconfigure(1, weight=2)
+#         self.grid_rowconfigure(0, weight=1)
+#
+#         self.left = tk.Frame(self, bg=CARD_BG, highlightbackground=CARD_BORDER, highlightthickness=1)
+#         self.left.grid(row=0, column=0, sticky="nsew", padx=(10, 6), pady=10)
+#         self.right = tk.Frame(self, bg=CARD_BG, highlightbackground=CARD_BORDER, highlightthickness=1)
+#         self.right.grid(row=0, column=1, sticky="nsew", padx=(6, 10), pady=10)
+#         self.left.grid_columnconfigure(0, weight=1)
+#         self.left.grid_columnconfigure(1, weight=1)
+#         self.right.grid_columnconfigure(0, weight=1)
+#         self.right.grid_rowconfigure(0, weight=1)
+#         self.right.grid_rowconfigure(1, weight=1)
+#
+#         self.location_trees: dict[str, ttk.Treeview] = {}
+#         for idx, loc in enumerate(["RL", "RR", "FL", "FR"]):
+#             r, c = idx // 2, idx % 2
+#             holder = self._build_tree_container(self.left, loc)
+#             holder.grid(row=r, column=c, sticky="nsew", padx=8, pady=8)
+#             self.location_trees[loc] = holder.tree  # type: ignore[attr-defined]
+#
+#         self.temp_holder = self._build_tree_container(self.right, "Temperatures")
+#         self.temp_holder.grid(row=0, column=0, sticky="nsew", padx=8, pady=(8, 4))
+#         self.pedal_holder = self._build_tree_container(self.right, "Pedals i Fre")
+#         self.pedal_holder.grid(row=1, column=0, sticky="nsew", padx=8, pady=(4, 8))
+#
+#         self.bars: dict[str, tuple[tk.Canvas, int, int, bool]] = {}
+#         self._add_section_bars(self.temp_holder, [("cool_in", "T. Inv In", False), ("cool_out", "T. Inv Out", False), ("motor_temp", "T. Motor", False)])
+#         self._add_section_bars(self.pedal_holder, [("acc1", "Accel 1 (%)", False), ("acc2", "Accel 2 (%)", False), ("brake_pct", "Fre (%)", False), ("brake_bar", "Pressió Fre (bar)", False), ("brake_plausibility", "Plausibilitat Fre", False), ("current_plausibility", "Plausibilitat Corrent", False)])
+#
+#         self._set_tree_theme(True)
+#
+#     def update_ui(self) -> None:
+#         data = self._collect_data()
+#         for loc in ["RL", "RR", "FL", "FR"]:
+#             vel_key = f"wheel_{loc.lower()}"
+#             susp_key = f"susp_{loc.lower()}"
+#             rows = [
+#                 ("Velocitat", f"{data[vel_key]:.1f} km/h", self._bar_text(data[vel_key], 0, 80, centered=False)),
+#                 ("Suspensió", f"{data[susp_key]:.1f} %", self._bar_text(data[susp_key], 0, 100, centered=True)),
+#             ]
+#             self._fill_tree(self.location_trees[loc], rows)
+#
+#         self._fill_tree(
+#             self.temp_holder.tree,  # type: ignore[attr-defined]
+#             [
+#                 ("Inv In", f"{data['cool_in']:.1f} C", self._bar_text(data["cool_in"], 0, 90, centered=False)),
+#                 ("Inv Out", f"{data['cool_out']:.1f} C", self._bar_text(data["cool_out"], 0, 90, centered=False)),
+#                 ("Motor", f"{data['motor_temp']:.1f} C", self._bar_text(data["motor_temp"], 0, 120, centered=False)),
+#             ],
+#         )
+#         self._fill_tree(
+#             self.pedal_holder.tree,  # type: ignore[attr-defined]
+#             [
+#                 ("Accel 1", f"{data['acc1']:.1f} %", self._bar_text(data["acc1"], 0, 100, centered=False)),
+#                 ("Accel 2", f"{data['acc2']:.1f} %", self._bar_text(data["acc2"], 0, 100, centered=False)),
+#                 ("Fre %", f"{data['brake_pct']:.1f} %", self._bar_text(data["brake_pct"], 0, 100, centered=False)),
+#                 ("Fre bar", f"{data['brake_pressure']:.1f} bar", self._bar_text(data["brake_pressure"], 0, 80, centered=False)),
+#                 ("Plausibilitat Fre", f"{data['brake_plausibility']:.1f}", self._bar_text(data["brake_plausibility"], 0, 1, centered=False)),
+#                 ("Plausibilitat Corrent", f"{data['current_plausibility']:.1f}", self._bar_text(data["current_plausibility"], 0, 1, centered=False)),
+#             ],
+#         )
+#
+#         self._update_bar("cool_in", data["cool_in"], 0, 90, "#5aa9ff")
+#         self._update_bar("cool_out", data["cool_out"], 0, 90, "#5aa9ff")
+#         motor_color = self._motor_temp_color(data["motor_temp"])
+#         self._update_bar("motor_temp", data["motor_temp"], 0, 120, motor_color)
+#         self._update_bar("acc1", data["acc1"], 0, 100, "#57d68d")
+#         self._update_bar("acc2", data["acc2"], 0, 100, "#57d68d")
+#         self._update_bar("brake_pct", data["brake_pct"], 0, 100, "#ff5b5b")
+#         self._update_bar("brake_bar", data["brake_pressure"], 0, 80, "#ff8a8a")
+#         self._update_bar("brake_plausibility", data["brake_plausibility"], 0, 1, "#ffd700")
+#         self._update_bar("current_plausibility", data["current_plausibility"], 0, 1, "#ff9500")
+#
+#     def _build_tree_container(self, parent: tk.Widget, title: str) -> tk.Frame:
+#         frame = tk.Frame(parent, bg=CARD_BG, highlightbackground=CARD_BORDER, highlightthickness=1)
+#         tk.Label(frame, text=title, bg=CARD_BG, fg="#67d7c5", font=("Roboto", 10, "bold")).pack(anchor="w", padx=8, pady=(6, 4))
+#         tree = ttk.Treeview(frame, columns=("loc", "value", "bar"), show="headings", height=4, style="PCB.Treeview")
+#         tree.heading("loc", text="Camp")
+#         tree.heading("value", text="Valor")
+#         tree.heading("bar", text="Barra")
+#         tree.column("loc", width=70, anchor="w")
+#         tree.column("value", width=85, anchor="e")
+#         tree.column("bar", width=90, anchor="w")
+#         tree.pack(fill="x", padx=6, pady=(0, 6))
+#         frame.tree = tree  # type: ignore[attr-defined]
+#         return frame
+#
+#     @staticmethod
+#     def _fill_tree(tree: ttk.Treeview, rows: list[tuple[str, str, str]]) -> None:
+#         for iid in tree.get_children():
+#             tree.delete(iid)
+#         for loc, val, bar in rows:
+#             tree.insert("", "end", values=(loc, val, bar))
+#
+#     def _add_section_bars(self, holder: tk.Frame, specs: list[tuple[str, str, bool]]) -> None:
+#         bars_panel = tk.Frame(holder, bg=CARD_BG)
+#         bars_panel.pack(fill="x", padx=6, pady=(0, 6))
+#         for row, (key, label, centered) in enumerate(specs):
+#             tk.Label(bars_panel, text=label, bg=CARD_BG, fg=TEXT_MAIN, font=("Roboto", 9)).grid(row=row, column=0, sticky="w", pady=3)
+#             c = tk.Canvas(bars_panel, width=170, height=14, bg=CARD_BG, highlightthickness=0)
+#             c.grid(row=row, column=1, sticky="e", pady=3, padx=(8, 0))
+#             bg = c.create_rectangle(2, 2, 168, 12, outline="#555555", fill="#1a1a1a")
+#             fill = c.create_rectangle(3, 3, 3, 11, outline="", fill="#57d68d")
+#             if centered:
+#                 c.create_line(85, 1, 85, 13, fill="#8a8a8a", dash=(2, 2))
+#             self.bars[key] = (c, bg, fill, centered)
+#
+#     def _update_bar(self, key: str, value: float, vmin: float, vmax: float, color: str) -> None:
+#         c, bg, fill, centered = self.bars[key]
+#         x1, y1, x2, y2 = c.coords(bg)
+#         ratio = 0.0 if vmax <= vmin else max(0.0, min(1.0, (value - vmin) / (vmax - vmin)))
+#         if centered:
+#             mid = (x1 + x2) / 2
+#             delta = ratio - 0.5
+#             if delta >= 0:
+#                 c.coords(fill, mid, y1 + 1, mid + (x2 - mid - 1) * (delta / 0.5), y2 - 1)
+#             else:
+#                 c.coords(fill, mid + (mid - x1 - 1) * (delta / 0.5), y1 + 1, mid, y2 - 1)
+#         else:
+#             c.coords(fill, x1 + 1, y1 + 1, x1 + 1 + (x2 - x1 - 2) * ratio, y2 - 1)
+#         c.itemconfigure(fill, fill=color)
+#
+#     def _collect_data(self) -> dict[str, float]:
+#         keys = {
+#             "wheel_fl": [("FRONT ECU", "wheel_speed_fl"), ("DYNAMICS", "vel_fl")],
+#             "wheel_fr": [("FRONT ECU", "wheel_speed_fr"), ("DYNAMICS", "vel_fr")],
+#             "wheel_rl": [("REAR ECU", "wheel_speed_rl"), ("DYNAMICS", "vel_rl")],
+#             "wheel_rr": [("REAR ECU", "wheel_speed_rr"), ("DYNAMICS", "vel_rr")],
+#             "cool_in": [("INVERTER", "coolant_temp_in"), ("INV", "coolant_in")],
+#             "cool_out": [("INVERTER", "coolant_temp_out"), ("INV", "coolant_out")],
+#             "motor_temp": [("INVERTER", "motor_temp"), ("INV", "motor_temp")],
+#             "brake_pressure": [("BSPD", "brake_pressure"), ("FRONT ECU", "brake_pressure")],
+#             "brake_pct": [("BSPD", "brake_pct"), ("FRONT ECU", "brake_pct")],
+#             "brake_plausibility": [("HVDB", "BpTHRbrake")],
+#             "current_plausibility": [("HVDB", "BpTHRcurrent")],
+#             "acc1": [("FRONT ECU", "accel_sensor_1"), ("VCU", "accel_1")],
+#             "acc2": [("FRONT ECU", "accel_sensor_2"), ("VCU", "accel_2")],
+#             "susp_fl": [("FRONT ECU", "susp_fl"), ("DYNAMICS", "susp_fl")],
+#             "susp_fr": [("FRONT ECU", "susp_fr"), ("DYNAMICS", "susp_fr")],
+#             "susp_rl": [("REAR ECU", "susp_rl"), ("DYNAMICS", "susp_rl")],
+#             "susp_rr": [("REAR ECU", "susp_rr"), ("DYNAMICS", "susp_rr")],
+#             # FrontECU Status signals
+#             "front_ecu_bms_int": [("FRONT ECU", "FpINTebms")],
+#             "front_ecu_imd_int": [("FRONT ECU", "FpINTeimd")],
+#             "front_ecu_ts_off": [("FRONT ECU", "FpINTtsoff")],
+#             "front_ecu_sdc_bms": [("FRONT ECU", "FpINTsbms")],
+#             "front_ecu_precharge": [("FRONT ECU", "FpINTpre")],
+#             "front_ecu_r2d": [("FRONT ECU", "FpINTr2d")],
+#             "front_ecu_menu": [("FRONT ECU", "FpINTmenu")],
+#             "front_ecu_microsd": [("FRONT ECU", "FpDIGmicrosd")],
+#             "front_ecu_sdc_inertia": [("FRONT ECU", "FpSDCinertia")],
+#             "front_ecu_sdc_bots": [("FRONT ECU", "FpSDCbots")],
+#             "front_ecu_sdc_csdb": [("FRONT ECU", "FpSDCcsdb")],
+#             "front_ecu_apps_err": [("FRONT ECU", "FpERRapps")],
+#             "front_ecu_refri_mode": [("FRONT ECU", "FpDIGrefri")],
+#             "front_ecu_r2d_status": [("FRONT ECU", "FpDIGr2d")],
+#             # RearECU Status signals
+#             "rear_ecu_sdc_hvd": [("REAR ECU", "RpSDChvd")],
+#             "rear_ecu_sdc_tsms": [("REAR ECU", "RpSDCtsms")],
+#             "rear_ecu_sdc_rsdb": [("REAR ECU", "RpSDCrsdb")],
+#             "rear_ecu_sdc_lsdb": [("REAR ECU", "RpSDClsdb")],
+#             "rear_ecu_brake_led_r": [("REAR ECU", "RpSTAbrkledR")],
+#             "rear_ecu_brake_led_g": [("REAR ECU", "RpSTAbrkledG")],
+#             "rear_ecu_brake_led_b": [("REAR ECU", "RpSTAbrkledB")],
+#             "rear_ecu_refri_accu": [("REAR ECU", "RpSTArefriaccu")],
+#             "rear_ecu_refri_mot": [("REAR ECU", "RpSTArefrimot")],
+#             "rear_ecu_refri_inv": [("REAR ECU", "RpSTArefriinv")],
+#             # HVAB signals
+#             "hvab_hv_status": [("HVAB", "ApTHRhv")],
+#             "hvab_current": [("HVAB", "ApSHU")],
+#             # HVDB additional signals
+#             "hvdb_err_plaus": [("HVDB", "BpERRplaus")],
+#             "hvdb_err_timer": [("HVDB", "BpERRtimer")],
+#             "hvdb_sdc_status": [("HVDB", "BpSDC")],
+#             "hvdb_driver_sdc": [("HVDB", "DpSDC")],
+#             "hvdb_driver_hv": [("HVDB", "DpTHRhv")],
+#             "hvdb_lch_discharge": [("HVDB", "DpLCHdischarge")],
+#             "hvdb_interlock1": [("HVDB", "DpSDCintlck1")],
+#             "hvdb_interlock2": [("HVDB", "DpSDCintlck2")],
+#             "hvdb_current": [("HVDB", "BpSHU")],
+#             "hvdb_driver_current": [("HVDB", "DpSHU")],
+#             # TSAL signals
+#             "tsal_spre": [("TSAL", "TpDIGspre")],
+#             "tsal_sairp": [("TSAL", "TpDIGsairp")],
+#             "tsal_sairn": [("TSAL", "TpDIGsairn")],
+#             "tsal_ipre": [("TSAL", "TpDIGipre")],
+#             "tsal_i_airp": [("TSAL", "TpDIGiairp")],
+#             "tsal_i_airn": [("TSAL", "TpDIGiairn")],
+#             "tsal_hv_status": [("TSAL", "TpTHRhv")],
+#             "tsal_err_scs": [("TSAL", "TpERRscs")],
+#             "tsal_thr_dis": [("TSAL", "TpTHRdis")],
+#             "tsal_lch": [("TSAL", "TpLCH")],
+#             "tsal_led": [("TSAL", "TpINTled")],
+#             # SDC additional signals
+#             "sdc_bms_err": [("SDC", "SpERRbms")],
+#             "sdc_imd_err": [("SDC", "SpERRimd")],
+#             "sdc_lch_bms": [("SDC", "SpLCHebms")],
+#             "sdc_lch_imd": [("SDC", "SpLCHeimd")],
+#             "sdc_reset_button": [("SDC", "SpINTresbut")],
+#             "sdc_current": [("SDC", "SpSHU")],
+#             # FrontECU sensor signals
+#             "front_accel_r_pot": [("FRONT ECU", "FpANLRpot")],
+#             "front_accel_l_pot": [("FRONT ECU", "FpANLLpot")],
+#             "front_susp_r": [("FRONT ECU", "FpANLRsus")],
+#             "front_susp_l": [("FRONT ECU", "FpANLLsus")],
+#             "front_speed_r": [("FRONT ECU", "FpDIGRvel")],
+#             "front_speed_l": [("FRONT ECU", "FpDIGLvel")],
+#             "front_brake_pressure": [("FRONT ECU", "FpANLbrake")],
+#             "front_taccu": [("FRONT ECU", "FpANLtaccu")],
+#             "front_vaccu": [("FRONT ECU", "FpANLvaccu")],
+#             "front_shu": [("FRONT ECU", "FpSHU")],
+#             # RearECU sensor signals
+#             "rear_susp_r": [("REAR ECU", "RpSIGRsus")],
+#             "rear_susp_l": [("REAR ECU", "RpSIGLsus")],
+#             "rear_speed_r": [("REAR ECU", "RpSIGRspeed")],
+#             "rear_speed_l": [("REAR ECU", "RpSIGLspeed")],
+#             "rear_temp_m": [("REAR ECU", "RpSIGItempM")],
+#             "rear_temp_o_m": [("REAR ECU", "RpSIGOtempM")],
+#             "rear_temp_m_i": [("REAR ECU", "RpSIGItempI")],
+#             "rear_temp_o_i": [("REAR ECU", "RpSIGOtempI")],
+#             "rear_voltage": [("REAR ECU", "RpSIGlvs")],
+#             "rear_shu": [("REAR ECU", "RpSHU")]
+#         }
+#         out: dict[str, float] = {}
+#         with self.model.lock():
+#             for k, aliases in keys.items():
+#                 v = None
+#                 for pcb, sig in aliases:
+#                     p = self.model.vehicle.pcbs.get(pcb)
+#                     if p and sig in p.signals:
+#                         v = p.signals[sig].value
+#                         break
+#                 out[k] = float(v) if v is not None else float("nan")
+#         self._demo_phase += 0.25
+#         demo = {
+#             "wheel_fl": 36 + 4*math.sin(self._demo_phase*0.3),
+#             "wheel_fr": 35 + 5*math.sin(self._demo_phase*0.31+0.2),
+#             "wheel_rl": 34 + 5*math.sin(self._demo_phase*0.28+0.4),
+#             "wheel_rr": 35 + 4*math.sin(self._demo_phase*0.3+0.1),
+#             "cool_in": 38 + 2*math.sin(self._demo_phase*0.07),
+#             "cool_out": 44 + 2*math.sin(self._demo_phase*0.08),
+#             "motor_temp": 56 + 3*math.sin(self._demo_phase*0.06),
+#             "brake_pressure": 20 + 15*math.sin(self._demo_phase*0.09),
+#             "brake_pct": 50 + 45*math.sin(self._demo_phase*0.09),
+#             "brake_plausibility": 1 + math.sin(self._demo_phase*0.15),
+#             "current_plausibility": 1 + math.sin(self._demo_phase*0.13),
+#             "acc1": 50 + 45*math.sin(self._demo_phase*0.11),
+#             "acc2": 50 + 45*math.sin(self._demo_phase*0.12+0.2),
+#             "susp_fl": 46 + 8*math.sin(self._demo_phase*0.25),
+#             "susp_fr": 49 + 7*math.sin(self._demo_phase*0.26+0.3),
+#             "susp_rl": 51 + 6*math.sin(self._demo_phase*0.24+0.5),
+#             "susp_rr": 48 + 7*math.sin(self._demo_phase*0.23+0.1),
+#             # FrontECU Status demo values
+#             "front_ecu_bms_int": math.sin(self._demo_phase*0.08) > 0,
+#             "front_ecu_imd_int": math.sin(self._demo_phase*0.09) > 0,
+#             "front_ecu_ts_off": math.sin(self._demo_phase*0.07) > 0,
+#             "front_ecu_sdc_bms": math.sin(self._demo_phase*0.06) > 0,
+#             "front_ecu_precharge": math.sin(self._demo_phase*0.05) > 0,
+#             "front_ecu_r2d": math.sin(self._demo_phase*0.04) > 0,
+#             "front_ecu_menu": math.sin(self._demo_phase*0.03) > 0,
+#             "front_ecu_microsd": math.sin(self._demo_phase*0.02) > 0,
+#             "front_ecu_sdc_inertia": math.sin(self._demo_phase*0.085) > 0,
+#             "front_ecu_sdc_bots": math.sin(self._demo_phase*0.095) > 0,
+#             "front_ecu_sdc_csdb": math.sin(self._demo_phase*0.105) > 0,
+#             "front_ecu_apps_err": math.sin(self._demo_phase*0.115) > 0,
+#             "front_ecu_refri_mode": math.sin(self._demo_phase*0.125) > 0,
+#             "front_ecu_r2d_status": math.sin(self._demo_phase*0.135) > 0,
+#             # RearECU Status demo values
+#             "rear_ecu_sdc_hvd": math.sin(self._demo_phase*0.08) > 0,
+#             "rear_ecu_sdc_tsms": math.sin(self._demo_phase*0.09) > 0,
+#             "rear_ecu_sdc_rsdb": math.sin(self._demo_phase*0.07) > 0,
+#             "rear_ecu_sdc_lsdb": math.sin(self._demo_phase*0.06) > 0,
+#             "rear_ecu_brake_led_r": math.sin(self._demo_phase*0.08) > 0,
+#             "rear_ecu_brake_led_g": math.sin(self._demo_phase*0.09) > 0,
+#             "rear_ecu_brake_led_b": math.sin(self._demo_phase*0.07) > 0,
+#             "rear_ecu_refri_accu": math.sin(self._demo_phase*0.06) > 0,
+#             "rear_ecu_refri_mot": math.sin(self._demo_phase*0.05) > 0,
+#             "rear_ecu_refri_inv": math.sin(self._demo_phase*0.04) > 0,
+#             # Additional demo values
+#             "hvab_hv_status": 1.0,
+#             "hvab_current": 1500 + 500*math.sin(self._demo_phase*0.2),
+#             "hvdb_err_plaus": 0.0,
+#             "hvdb_err_timer": 0.0,
+#             "hvdb_sdc_status": 1.0,
+#             "hvdb_driver_sdc": 1.0,
+#             "hvdb_driver_hv": 1.0,
+#             "hvdb_lch_discharge": 0.0,
+#             "hvdb_interlock1": 1.0,
+#             "hvdb_interlock2": 1.0,
+#             "hvdb_current": 2000 + 1000*math.sin(self._demo_phase*0.15),
+#             "hvdb_driver_current": 2000 + 1000*math.sin(self._demo_phase*0.15),
+#             "tsal_spre": 1.0,
+#             "tsal_sairp": 1.0,
+#             "tsal_sairn": 1.0,
+#             "tsal_ipre": 1.0,
+#             "tsal_i_airp": 1.0,
+#             "tsal_i_airn": 1.0,
+#             "tsal_hv_status": 1.0,
+#             "tsal_err_scs": 0.0,
+#             "tsal_thr_dis": 0.0,
+#             "tsal_lch": 1.0,
+#             "tsal_led": 1.0,
+#             "sdc_bms_err": 0.0,
+#             "sdc_imd_err": 0.0,
+#             "sdc_lch_bms": 1.0,
+#             "sdc_lch_imd": 1.0,
+#             "sdc_reset_button": 0.0,
+#             "sdc_current": 3000 + 2000*math.sin(self._demo_phase*0.23),
+#             # FrontECU sensor demo values
+#             "front_accel_r_pot": 50 + 50*math.sin(self._demo_phase*0.11),
+#             "front_accel_l_pot": 50 + 50*math.sin(self._demo_phase*0.12+0.2),
+#             "front_susp_r": 500 + 500*math.sin(self._demo_phase*0.25),
+#             "front_susp_l": 500 + 500*math.sin(self._demo_phase*0.26+0.3),
+#             "front_speed_r": 45 + 40*math.sin(self._demo_phase*0.35),
+#             "front_speed_l": 45 + 40*math.sin(self._demo_phase*0.36+0.1),
+#             "front_brake_pressure": 20 + 15*math.sin(self._demo_phase*0.09),
+#             "front_taccu": 55 + 45*math.sin(self._demo_phase*0.3),
+#             "front_vaccu": 250 + 250*math.sin(self._demo_phase*0.31),
+#             "front_shu": 2500 + 2500*math.sin(self._demo_phase*0.32),
+#             # RearECU sensor demo values
+#             "rear_susp_r": 500 + 500*math.sin(self._demo_phase*0.33),
+#             "rear_susp_l": 500 + 500*math.sin(self._demo_phase*0.34+0.1),
+#             "rear_speed_r": 45 + 40*math.sin(self._demo_phase*0.35),
+#             "rear_speed_l": 45 + 40*math.sin(self._demo_phase*0.36+0.1),
+#             "rear_temp_m": 40 + 10*math.sin(self._demo_phase*0.05),
+#             "rear_temp_o_m": 45 + 10*math.sin(self._demo_phase*0.06),
+#             "rear_temp_m_i": 35 + 10*math.sin(self._demo_phase*0.07),
+#             "rear_temp_o_i": 40 + 10*math.sin(self._demo_phase*0.08),
+#             "rear_voltage": 12.0 + 2.0*math.sin(self._demo_phase*0.04),
+#             "rear_shu": 2500 + 2500*math.sin(self._demo_phase*0.32),
+#         }
+#         for k, v in out.items():
+#             if v != v:
+#                 out[k] = demo[k] if self.demo_enabled else 0.0
+#         out["avg_speed"] = (out["wheel_fl"] + out["wheel_fr"] + out["wheel_rl"] + out["wheel_rr"]) / 4.0
+#         out["avg_temp"] = (out["cool_in"] + out["cool_out"] + out["motor_temp"]) / 3.0
+#         return out
+#
+#     def _motor_temp_color(self, t: float) -> str:
+#         if t < 75:
+#             return TEXT_MAIN if self._dark_mode else "#1a1a1a"
+#         if t < 95:
+#             return "#ffd166"
+#         self._motor_flash = not self._motor_flash
+#         return "#ff4d4d" if self._motor_flash else "#772222"
+#
+#     def set_demo_enabled(self, enabled: bool) -> None:
+#         self.demo_enabled = enabled
+#
+#     def set_dark_mode(self, enabled: bool) -> None:
+#         self._dark_mode = enabled
+#         bg = DARK_BG if enabled else "#f0f0f0"
+#         card = CARD_BG if enabled else "white"
+#         self.configure(bg=bg)
+#         self.left.configure(bg=card, highlightbackground=CARD_BORDER if enabled else "#d0d0d0")
+#         self.right.configure(bg=card, highlightbackground=CARD_BORDER if enabled else "#d0d0d0")
+#         for frame in [self.left, self.right]:
+#             for child in frame.winfo_children():
+#                 if isinstance(child, tk.Frame):
+#                     child.configure(bg=card, highlightbackground=CARD_BORDER if enabled else "#d0d0d0")
+#                     for sub in child.winfo_children():
+#                         if isinstance(sub, tk.Label):
+#                             sub.configure(bg=card, fg=TEXT_MAIN if enabled else "#1a1a1a")
+#                         elif isinstance(sub, tk.Canvas):
+#                             sub.configure(bg=card)
+#         self._set_tree_theme(enabled)
+#
+#     def _set_tree_theme(self, enabled: bool) -> None:
+#         style = ttk.Style()
+#         if enabled:
+#             style.configure("Sensor.Treeview", background="#2f2f2f", fieldbackground="#2f2f2f", foreground="#f2f2f2")
+#             style.configure("Sensor.Treeview.Heading", background="#3a3a3a", foreground="#d8d8d8")
+#         else:
+#             style.configure("Sensor.Treeview", background="white", fieldbackground="white", foreground="#1a1a1a")
+#             style.configure("Sensor.Treeview.Heading", background="#e0e0e0", foreground="#1a1a1a")
+#         for holder in [*self.location_trees.values(), self.temp_holder.tree, self.pedal_holder.tree]:  # type: ignore[attr-defined]
+#             holder.configure(style="Sensor.Treeview")
+#
+#     @staticmethod
+#     def _bar_text(value: float, vmin: float, vmax: float, centered: bool) -> str:
+#         n = 10
+#         if vmax <= vmin:
+#             return "-" * n
+#         ratio = max(0.0, min(1.0, (value - vmin) / (vmax - vmin)))
+#         if centered:
+#             mid = n // 2
+#             delta = ratio - 0.5
+#             cells = [" "] * n
+#             cells[mid] = "|"
+#             span = int(abs(delta) * 2 * mid)
+#             if delta >= 0:
+#                 for i in range(mid + 1, min(n, mid + 1 + span)):
+#                     cells[i] = "\u2588"
+#             else:
+#                 for i in range(max(0, mid - span), mid):
+#                     cells[i] = "\u2588"
+#             return "".join(cells)
+#         filled = int(ratio * n)
+#         return "\u2588" * filled + "\u2591" * (n - filled)
 
 
 class ConfigurationTab(tk.Frame):
@@ -1461,26 +1459,28 @@ class ConfigurationTab(tk.Frame):
             selectcolor=DARK_BG,
             font=("Roboto", 11),
         ).pack(anchor="w", padx=18, pady=6)
-        tk.Label(self.panel, text="Refresc UI (ms)", bg=CARD_BG, fg=TEXT_MAIN, font=("Roboto", 11)).pack(
-            anchor="w", padx=18, pady=(14, 4)
-        )
+        tk.Label(
+            self.panel,
+            text="Interval d'actualització UI (ms):",
+            bg=CARD_BG,
+            fg=TEXT_MAIN,
+            font=("Roboto", 11),
+        ).pack(anchor="w", padx=18, pady=(6, 2))
         tk.Scale(
             self.panel,
-            from_=100,
+            from_=50,
             to=1000,
             orient="horizontal",
-            resolution=50,
             variable=self.refresh_var,
             bg=CARD_BG,
             fg=TEXT_MAIN,
             highlightthickness=0,
-            troughcolor="#383838",
-            activebackground="#67d7c5",
-            length=320,
-        ).pack(anchor="w", padx=18)
+            troughcolor="#3a3a3a",
+            font=("Roboto", 10),
+        ).pack(fill="x", padx=18, pady=(0, 16))
 
     def update_ui(self) -> None:
-        return
+        pass
 
     def set_dark_mode(self, enabled: bool) -> None:
         bg = DARK_BG if enabled else "#f0f0f0"

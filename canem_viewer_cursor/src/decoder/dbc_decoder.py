@@ -46,10 +46,12 @@ class DBCDecoder:
 
             msg_def = self.db.get_message_by_frame_id(arbitration_id)
 
-            decoded = self.db.decode_message(arbitration_id, data)
+            # Try to decode with allow_truncated=True to handle short frames
+            decoded = self.db.decode_message(arbitration_id, data, allow_truncated=True)
 
-        except Exception:
+        except Exception as e:
 
+            # Silently skip unknown message IDs or decode errors
             return []
 
 
