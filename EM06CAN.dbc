@@ -53,7 +53,11 @@ BO_ 259 InverterTX: 8 Inverter
  SG_ iErr m143 : 8|16@1+ (1,0) [0|65535] "" Vector__XXX
  SG_ RegID M : 0|8@1+ (1,0) [0|255] "" Vector__XXX
 
-BO_ 58 IMD_Info_ITSystem: 8 IMD
+BO_ 58 IMD_Info_ITSystem: 5 IMD
+ SG_ imdUnbalmeascount : 32|8@1+ (1,0) [0|255] "" Vector__XXX
+ SG_ imdUnbalancedvalue : 24|8@1+ (1,0) [0|100] "%" Vector__XXX
+ SG_ imdCapmeascount : 16|8@1+ (1,0) [0|255] "" Vector__XXX
+ SG_ imdCapacityValue : 0|16@1+ (0.1,0) [0|6553.5] "uF" Vector__XXX
 
 BO_ 57 IMD_Info_Voltage: 6 IMD
  SG_ imdHVsystvolt : 32|16@1+ (0.05,-1606.4) [-1606.4|1670.35] "V" Vector__XXX
@@ -61,6 +65,11 @@ BO_ 57 IMD_Info_Voltage: 6 IMD
  SG_ imdHVnegerth : 0|16@1+ (0.05,-1606.4) [-1606.4|1670.35] "V" Vector__XXX
 
 BO_ 56 IMD_Info_IsolationDetail: 8 IMD
+ SG_ imdIquality : 56|8@1+ (1,0) [0|100] "%" Vector__XXX
+ SG_ imdIsomeascount : 48|8@1+ (1,0) [0|255] "" Vector__XXX
+ SG_ imdRisooriginal : 32|16@1+ (1,0) [0|65535] "kOhm" Vector__XXX
+ SG_ imdRisopos : 16|16@1+ (1,0) [0|65535] "kOhm" Vector__XXX
+ SG_ imdRisoneg : 0|16@1+ (1,0) [0|65535] "kOhm" Vector__XXX
 
 BO_ 55 IMD_Info_General: 8 IMD
  SG_ imdWarningsalarms : 32|16@1+ (1,0) [0|65535] "" Vector__XXX
