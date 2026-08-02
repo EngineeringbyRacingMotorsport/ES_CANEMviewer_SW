@@ -42,6 +42,24 @@ BO_ 3221225472 VECTOR__INDEPENDENT_SIG_MSG: 0 Vector__XXX
  SG_ SpERRbms : 0|1@1+ (1,0) [0|1] "" Vector__XXX
  SG_ SpERRbimd : 0|1@1+ (1,0) [0|1] "" Vector__XXX
 
+BO_ 0 New_Message_19: 8 Vector__XXX
+ SG_ New_Signal_111 : 32|8@1+ (1,0) [0|0] "" Vector__XXX
+
+BO_ 288 Charger_Config: 8 Vector__XXX
+ SG_ CpDIGwmaxi : 23|16@0+ (0.1,0) [0|6553.5] "A" Vector__XXX
+ SG_ CpDIGwenable : 32|1@0+ (1,0) [0|1] "" Vector__XXX
+ SG_ CpDIGwmaxv : 7|16@0+ (0.1,0) [0|6553.5] "V" Vector__XXX
+
+BO_ 2550588916 Charger_Setup: 8 Vector__XXX
+ SG_ CpDIGsmaxv : 7|16@0+ (0.1,0) [0|6553.5] "V" Vector__XXX
+ SG_ CpDIGsmaxi : 23|16@0+ (0.1,0) [0|6553.5] "A" Vector__XXX
+ SG_ CpDIGsenable : 32|1@0+ (1,0) [0|1] "" Vector__XXX
+
+BO_ 2566869221 Charger_Feedback: 8 Vector__XXX
+ SG_ CpDIGfv : 7|16@0+ (0.1,0) [0|6553.5] "V" Vector__XXX
+ SG_ CpDIGfi : 23|16@0+ (0.1,0) [0|6553.5] "A" Vector__XXX
+ SG_ CpDIGfenable : 32|1@0+ (1,0) [0|1] "" Vector__XXX
+
 BO_ 259 InverterTX: 8 Inverter
  SG_ iWarn m143 : 24|16@1+ (1,0) [0|65535] "" Vector__XXX
  SG_ iVout m138 : 8|16@1+ (1,0) [0|4000] "" Vector__XXX
@@ -172,8 +190,36 @@ BO_ 1536 SDCReset: 3 SDC
 
 
 CM_ BO_ 3221225472 "This is a message for not used signals, created by Vector CANdb++ DBC OLE DB Provider.";
+BA_DEF_ BO_  "VFrameFormat" ENUM  "StandardCAN","ExtendedCAN","reserved","reserved","reserved","reserved","reserved","reserved","reserved","reserved","reserved","reserved","reserved","reserved","StandardCAN_FD","ExtendedCAN_FD","J1939PGN";
+BA_DEF_ BO_  "SendMode" ENUM  "Cyclic","IfActive","NoMsgSendType";
+BA_DEF_ BO_  "VCAN_J1939_PGN" INT 0 262143;
+BA_DEF_ BU_  "NodeAddress" INT 0 255;
+BA_DEF_ BU_  "J1939AAC" INT 0 1;
+BA_DEF_ BU_  "J1939IndustryGroup" INT 0 7;
+BA_DEF_ BU_  "J1939System" INT 0 127;
+BA_DEF_ BU_  "J1939SystemInstance" INT 0 15;
+BA_DEF_ BU_  "J1939Function" INT 0 255;
+BA_DEF_ BU_  "J1939FunctionInstance" INT 0 31;
+BA_DEF_ BU_  "J1939ECUInstance" INT 0 7;
+BA_DEF_ BU_  "J1939ManufacturerCode" INT 0 2047;
 BA_DEF_  "MultiplexExtEnabled" ENUM  "No","Yes";
 BA_DEF_  "BusType" STRING ;
+BA_DEF_DEF_  "VFrameFormat" "J1939PGN";
+BA_DEF_DEF_  "SendMode" "Cyclic";
+BA_DEF_DEF_  "VCAN_J1939_PGN" 0;
+BA_DEF_DEF_  "NodeAddress" 254;
+BA_DEF_DEF_  "J1939AAC" 0;
+BA_DEF_DEF_  "J1939IndustryGroup" 0;
+BA_DEF_DEF_  "J1939System" 0;
+BA_DEF_DEF_  "J1939SystemInstance" 0;
+BA_DEF_DEF_  "J1939Function" 0;
+BA_DEF_DEF_  "J1939FunctionInstance" 0;
+BA_DEF_DEF_  "J1939ECUInstance" 0;
+BA_DEF_DEF_  "J1939ManufacturerCode" 0;
 BA_DEF_DEF_  "MultiplexExtEnabled" "Yes";
-BA_DEF_DEF_  "BusType" "CAN";
+BA_DEF_DEF_  "BusType" "J1939";
+BA_ "BusType" "J1939";
+BA_ "VFrameFormat" BO_ 288 0;
+BA_ "VFrameFormat" BO_ 2550588916 1;
+BA_ "VFrameFormat" BO_ 2566869221 1;
 
