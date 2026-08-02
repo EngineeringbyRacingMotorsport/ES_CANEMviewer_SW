@@ -36,15 +36,6 @@ BS_:
 BU_: BMS Inverter IMD FrontECU RearECU HVAB HVDB TSAL SDC
 
 
-BO_ 3221225472 VECTOR__INDEPENDENT_SIG_MSG: 0 Vector__XXX
- SG_ FpANLLpot : 0|16@1- (1,0) [-32768|32767] "" Vector__XXX
- SG_ FpINTpre : 0|1@1+ (1,0) [0|1] "" Vector__XXX
- SG_ SpERRbms : 0|1@1+ (1,0) [0|1] "" Vector__XXX
- SG_ SpERRbimd : 0|1@1+ (1,0) [0|1] "" Vector__XXX
-
-BO_ 0 New_Message_19: 8 Vector__XXX
- SG_ New_Signal_111 : 32|8@1+ (1,0) [0|0] "" Vector__XXX
-
 BO_ 288 Charger_Config: 8 Vector__XXX
  SG_ CpDIGwmaxi : 23|16@0+ (0.1,0) [0|6553.5] "A" Vector__XXX
  SG_ CpDIGwenable : 32|1@0+ (1,0) [0|1] "" Vector__XXX
@@ -189,7 +180,6 @@ BO_ 1536 SDCReset: 3 SDC
 
 
 
-CM_ BO_ 3221225472 "This is a message for not used signals, created by Vector CANdb++ DBC OLE DB Provider.";
 BA_DEF_ BO_  "VFrameFormat" ENUM  "StandardCAN","ExtendedCAN","reserved","reserved","reserved","reserved","reserved","reserved","reserved","reserved","reserved","reserved","reserved","reserved","StandardCAN_FD","ExtendedCAN_FD","J1939PGN";
 BA_DEF_ BO_  "SendMode" ENUM  "Cyclic","IfActive","NoMsgSendType";
 BA_DEF_ BO_  "VCAN_J1939_PGN" INT 0 262143;
