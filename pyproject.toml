@@ -1,0 +1,9 @@
+[tool.basedpyright]
+venvPath = "."
+venv = ".venv"
+
+[tool.ruff.lint]
+extend-select = ["I"]
+
+[tool.ruff.lint.isort]
+no-sections = true

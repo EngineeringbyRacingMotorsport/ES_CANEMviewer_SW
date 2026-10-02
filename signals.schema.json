@@ -1,0 +1,152 @@
+{
+  "$defs": {
+    "Maximiters": {
+      "additionalProperties": false,
+      "properties": {
+        "i": {
+          "maxItems": 4,
+          "minItems": 4,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "I",
+          "type": "array"
+        },
+        "p": {
+          "maxItems": 4,
+          "minItems": 4,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "P",
+          "type": "array"
+        },
+        "t": {
+          "maxItems": 4,
+          "minItems": 4,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "T",
+          "type": "array"
+        },
+        "r": {
+          "maxItems": 4,
+          "minItems": 4,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "R",
+          "type": "array"
+        }
+      },
+      "required": [
+        "i",
+        "p",
+        "t",
+        "r"
+      ],
+      "title": "Maximiters",
+      "type": "object"
+    },
+    "Signal": {
+      "additionalProperties": false,
+      "properties": {
+        "Comment": {
+          "title": "Comment",
+          "type": "string"
+        },
+        "Unit": {
+          "title": "Unit",
+          "type": "string"
+        },
+        "Factor": {
+          "title": "Factor",
+          "type": "number"
+        },
+        "Offset": {
+          "title": "Offset",
+          "type": "number"
+        },
+        "Category": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Category",
+          "type": "array"
+        },
+        "Maximiters": {
+          "$ref": "#/$defs/Maximiters"
+        }
+      },
+      "required": [
+        "Comment",
+        "Unit",
+        "Factor",
+        "Offset",
+        "Category",
+        "Maximiters"
+      ],
+      "title": "Signal",
+      "type": "object"
+    }
+  },
+  "additionalProperties": {
+    "patternProperties": {
+      "^[0-9]+$": {
+        "additionalProperties": {
+          "$ref": "#/$defs/Signal"
+        },
+        "type": "object"
+      }
+    },
+    "type": "object"
+  },
+  "description": "Signals grouped by sending node, then by CAN frame ID (decimal string).",
+  "title": "Schema",
+  "type": "object"
+}
