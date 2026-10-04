@@ -1,5 +1,5 @@
 import sqlite3
-from .utils import read_file
+from .utils import read_text_file
 from cantools.database import load_string
 from cantools.database.can import Database, Node
 from cantools.database.can import Message as CanMessage
@@ -200,27 +200,19 @@ class Schema(_Model):
 _schema: tuple[str, Schema, Database, sqlite3.Connection] | None = None
 
 
-def get_schema(path: str | None = None) -> Schema | None:
-    schema = _update(path)
-    return schema[0] if schema is not None else None
+def load(path: str) -> tuple[Schema, Database, sqlite3.Connection]:
+    schema = Schema.model_validate_json(read_text_file(path))
+    conn = _create_connection(schema)
+    db = _create_database(schema)
+    return (schema, db, conn)
 
 
-def get_can(path: str | None = None) -> Database | None:
-    schema = _update(path)
-    return schema[1] if schema is not None else None
-
-
-def get_connection(path: str | None = None) -> sqlite3.Connection | None:
-    schema = _update(path)
-    return schema[2] if schema is not None else None
-
-
-def _update(
-    path: str | None,
+def get_all(
+    path: str | None = None,
 ) -> tuple[Schema, Database, sqlite3.Connection] | None:
     global _schema
     if path is not None:
-        schema, can, conn = _load(path)
+        schema, can, conn = load(path)
         _schema = (path, schema, can, conn)
         return (schema, can, conn)
     elif _schema is not None:
@@ -229,14 +221,22 @@ def _update(
         return None
 
 
-def _load(path: str) -> tuple[Schema, Database, sqlite3.Connection]:
-    schema = Schema.model_validate_json(read_file(path))
-    conn = _create_connection(schema)
-    db = _create_database(schema)
-    return (schema, db, conn)
+def get_schema(path: str | None = None) -> Schema | None:
+    schema = get_all(path)
+    return schema[0] if schema is not None else None
 
 
-def _quote_ident(name: str) -> str:
+def get_can(path: str | None = None) -> Database | None:
+    schema = get_all(path)
+    return schema[1] if schema is not None else None
+
+
+def get_connection(path: str | None = None) -> sqlite3.Connection | None:
+    schema = get_all(path)
+    return schema[2] if schema is not None else None
+
+
+def quote_ident(name: str) -> str:
     return '"' + name.replace('"', '""') + '"'
 
 
@@ -261,14 +261,14 @@ def _create_connection(schema: Schema) -> sqlite3.Connection:
                     f"Signal name '{TIMESTAMP_COLUMN}' in message {name} is reserved"
                 )
 
-            columns = [f"{_quote_ident(TIMESTAMP_COLUMN)} REAL NOT NULL"]
+            columns = [f"{quote_ident(TIMESTAMP_COLUMN)} INTEGER NOT NULL"]
             for signal_name, signal in message.Signals.items():
                 # Multiplexed signals are only present in some of the frames
                 nullable = signal.MultiplexerIds is not None
                 columns.append(
-                    f"{_quote_ident(signal_name)} {_column_type(signal)}{'' if nullable else ' NOT NULL'}"
+                    f"{quote_ident(signal_name)} {_column_type(signal)}{'' if nullable else ' NOT NULL'}"
                 )
-            conn.execute(f"CREATE TABLE {_quote_ident(name)} ({', '.join(columns)})")
+            conn.execute(f"CREATE TABLE {quote_ident(name)} ({', '.join(columns)})")
     except:
         conn.close()
         raise

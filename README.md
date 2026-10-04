@@ -3,6 +3,9 @@
 - Arbitration ID
     - LEB128 Encoded Unsigned Integral
         - Max Value: 0x1FFF_FFFF
+- Timestamp
+    - LEB128 Encoded Unsigned Integral
+        - Max Value: 0xFFFFFFFF
 - Length
     - 8 Bit Unsigned Integral
 - Data

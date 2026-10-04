@@ -1,92 +1,77 @@
-import cantools
-import socket
-from abc import ABC, abstractmethod
+import sqlite3
+from .schema import TIMESTAMP_COLUMN, get_all, quote_ident
+from .utils import unwrap
+from cantools.database.can import Database, Message
+from cantools.database.namedsignalvalue import NamedSignalValue
 from cantools.typechecking import DecodeResultType
-from io import BufferedIOBase, BufferedReader, FileIO, RawIOBase
+from io import BufferedIOBase, RawIOBase
 from typing import *  # pyright: ignore[reportWildcardImportFromLibrary]
 
 MIN_PACKET_SIZE: Final[int] = 2
 MAX_PACKET_SIZE: Final[int] = 14
 
 
-class CanSource(ABC):
-    @abstractmethod
-    def next(self) -> tuple[int, memoryview] | None: ...
-
-
-class CanSourceIO(CanSource):
-    io: RawIOBase | BufferedIOBase
-
-    def __init__(self, io: RawIOBase | BufferedIOBase | str) -> None:
-        self.io = BufferedReader(FileIO(io)) if isinstance(io, str) else io
-
-    @override
-    def next(self) -> tuple[int, memoryview] | None:
-        return read_packet(self.io)
-
-
-class CanSourceUDP(CanSource):
-    sock: socket.socket
-
-    def __init__(self, port: int = 0) -> None:
-        self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self.sock.bind(("0.0.0.0", port))
-
-    @override
-    def next(self) -> tuple[int, memoryview] | None:
-        buf = self.sock.recv(MAX_PACKET_SIZE)
-        if len(buf) == 0:
-            return None
-        return parse_packet(memoryview(buf))
-
-
-class CanReader:
-    source: CanSource
-    db: cantools.database.can.Database
-
-    def __init__(
-        self, source: CanSource | str, db: cantools.database.can.Database | str
-    ) -> None:
-        self.source = CanSourceIO(source) if isinstance(source, str) else source
-        if isinstance(db, str):
-            database = cantools.database.load_file(db, database_format="dbc")
-            if isinstance(database, cantools.database.can.Database):
-                self.db = database
-            else:
-                raise TypeError("Unsupported database type")
-        else:
-            self.db = db
-
-    def next(
-        self,
-    ) -> tuple[cantools.database.can.Message, DecodeResultType] | None:
+def read_file(path: str):
+    _, can, conn = unwrap(get_all())
+    with open(path, "rb") as f:
         while True:
-            data = self.source.next()
-            if data is None:
-                return
-            (frame_id, payload) = data
+            next = _read_packet(f)
+            if next is None:
+                break
+            _upload_packet(can, conn, next)
 
-            msg: cantools.database.can.Message
-            try:
-                msg = self.db.get_message_by_frame_id(frame_id)
-            except KeyError:
-                continue
 
-            dec = msg.decode(payload.tobytes(), allow_truncated=True)
-            return (msg, dec)
+## Store a decoded packet as a row of its message's table
+def _upload_packet(
+    can: Database,
+    conn: sqlite3.Connection,
+    info: tuple[int, int, bytes],
+) -> None:
+    id, timestamp, data = info
+    parsed = _parse_message(can, id, data)
+    if parsed is None:
+        return
+    msg, data = parsed
 
-    def __iter__(
-        self,
-    ) -> Generator[tuple[cantools.database.can.Message, DecodeResultType]]:
-        while True:
-            data = self.next()
-            if data is None:
-                return
-            yield data
+    if not isinstance(data, dict):
+        raise TypeError(f"Container message {msg.name} is not supported")
+
+    # Multiplexed messages only carry some of their signals, so name the columns
+    columns: list[str] = [TIMESTAMP_COLUMN]
+    values: list[int | float] = [timestamp]
+    for name, value in data.items():
+        if isinstance(value, NamedSignalValue):
+            # Store the physical value behind the choice's label
+            value = msg.get_signal_by_name(name).conversion.raw_to_scaled(
+                value.value, decode_choices=False
+            )
+        elif isinstance(value, str):
+            raise TypeError(f"Signal {name} of message {msg.name} has a string value")
+        columns.append(name)
+        values.append(value)
+
+    conn.execute(
+        f"INSERT INTO {quote_ident(msg.name)} ({', '.join(map(quote_ident, columns))}) "
+        f"VALUES ({', '.join('?' * len(values))})",
+        values,
+    )
+
+
+def _parse_message(
+    db: Database, id: int, data: bytes
+) -> tuple[Message, DecodeResultType] | None:
+    msg: Message
+    try:
+        msg = db.get_message_by_frame_id(id)
+    except KeyError:
+        return None
+
+    dec = msg.decode(data, allow_truncated=True)
+    return (msg, dec)
 
 
 ## Parse Unsigned LEB128 Encoded Integral
-def parse_uleb128(b: memoryview, max_val: int = 0x1FFF_FFFF) -> tuple[int, memoryview]:
+def _parse_uleb128(b: memoryview, max_val: int = 0x1FFF_FFFF) -> tuple[int, memoryview]:
     result: int = 0
     shift: int = 0
     while True:
@@ -102,20 +87,20 @@ def parse_uleb128(b: memoryview, max_val: int = 0x1FFF_FFFF) -> tuple[int, memor
 
 
 ## Read a packet from the specified memory view, advancing it past the packet
-def parse_packet(b: memoryview) -> tuple[int, memoryview]:
-    frame_id, b = parse_uleb128(b)
+def _parse_packet(b: memoryview) -> tuple[int, int, bytes]:
+    frame_id, b = _parse_uleb128(b)
+    timestamp, b = _parse_uleb128(b, max_val=0xFFFF_FFFF)
     data_len: int = b[0]
     if data_len > 8:
         raise ValueError("Invalid packet data length")
     data: memoryview = b[1 : 1 + data_len]
     if len(data) != data_len:
         raise Exception("Unexpected end of stream")
-    b = b[1 + data_len :]
-    return (frame_id, data)
+    return (frame_id, timestamp, data.tobytes())
 
 
 ## Read Unsigned LEB128 Encoded Integral
-def read_uleb128(
+def _read_uleb128(
     io: RawIOBase | BufferedIOBase, max_val: int = 0x1FFF_FFFF
 ) -> int | None:
     result: int = 0
@@ -142,11 +127,12 @@ def read_uleb128(
 
 
 ## Read a packet from the specified io reader, advancing it past the packet
-def read_packet(io: RawIOBase | BufferedIOBase) -> tuple[int, memoryview] | None:
-    frame_id: int | None = read_uleb128(io)
+def _read_packet(io: RawIOBase | BufferedIOBase) -> tuple[int, int, bytes] | None:
+    frame_id: int | None = _read_uleb128(io)
     if frame_id is None:
         return None
 
+    timestamp = unwrap(_read_uleb128(io, max_val=0xFFFF_FFFF))
     len_byte = io.read(1)
     if len(len_byte) == 0:
         raise Exception("Unexpected end of stream")
@@ -164,4 +150,4 @@ def read_packet(io: RawIOBase | BufferedIOBase) -> tuple[int, memoryview] | None
         else:
             view = view[count:]
 
-    return (frame_id, memoryview(buf))
+    return (frame_id, timestamp, bytes(buf))

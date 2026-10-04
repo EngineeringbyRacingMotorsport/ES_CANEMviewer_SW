@@ -18,7 +18,7 @@ from io import BufferedIOBase
 from typing import Any
 
 from src.schema import Schema, _create_database
-from src.utils import read_file
+from src.utils import read_text_file
 
 DURATION_MS = 20_000
 TICK_MS = 10
@@ -38,10 +38,13 @@ def write_uleb128(out: BufferedIOBase, value: int) -> None:
             return
 
 
-def write_packet(out: BufferedIOBase, frame_id: int, data: bytes) -> None:
+def write_packet(out: BufferedIOBase, frame_id: int, timestamp_ms: int, data: bytes) -> None:
     if len(data) > 8:
         raise ValueError("Invalid packet data length")
+    if timestamp_ms > 0xFFFF_FFFF:
+        raise ValueError("Invalid packet timestamp")
     write_uleb128(out, frame_id)
+    write_uleb128(out, timestamp_ms)
     out.write(bytes([len(data)]))
     out.write(data)
 
@@ -251,7 +254,7 @@ class Car:
 
 
 def main(json_path: str, out_path: str) -> None:
-    schema = Schema.model_validate_json(read_file(json_path))
+    schema = Schema.model_validate_json(read_text_file(json_path))
     db = _create_database(schema)
     periods = {
         name: message.CycleTime
@@ -273,7 +276,7 @@ def main(json_path: str, out_path: str) -> None:
                     data = msg.encode(signals)
                 else:
                     data = bytes(car.rng.getrandbits(8) for _ in range(msg.length))
-                write_packet(out, msg.frame_id, data)
+                write_packet(out, msg.frame_id, tick_ms, data)
                 count += 1
 
     print(f"Wrote {count} packets to {out_path}")
