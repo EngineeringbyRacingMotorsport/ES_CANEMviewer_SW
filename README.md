@@ -11,5 +11,5 @@
 - Data
     - Max length: 8 bytes
 
-Min Packet Size: 1 + 1 + 0 = 2
-Max Packet Size: 5 + 1 + 8 = 14
+Min Packet Size: 1 + 1 + 1 + 0 = 3
+Max Packet Size: 5 + 5 + 1 + 8 = 19
