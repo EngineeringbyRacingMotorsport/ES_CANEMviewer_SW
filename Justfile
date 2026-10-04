@@ -24,5 +24,5 @@ run:
 gen-example:
     {{ PYTHON_PATH }} -m tools.gen_example
 
-gen-schema:
-    {{ PYTHON_PATH }} -m tools.gen_schema
+dbc-to-json *ARGS:
+    {{ PYTHON_PATH }} -m tools.dbc_to_json {{ ARGS }}

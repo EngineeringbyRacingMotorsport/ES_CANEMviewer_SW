@@ -42,10 +42,10 @@ class CanSourceUDP(CanSource):
 
 class CanReader:
     source: CanSource
-    db: cantools.database.can.database.Database
+    db: cantools.database.can.Database
 
     def __init__(
-        self, source: CanSource | str, db: cantools.database.can.database.Database | str
+        self, source: CanSource | str, db: cantools.database.can.Database | str
     ) -> None:
         self.source = CanSourceIO(source) if isinstance(source, str) else source
         if isinstance(db, str):
