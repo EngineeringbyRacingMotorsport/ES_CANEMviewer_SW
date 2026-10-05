@@ -1,3 +1,4 @@
 cantools==44.1.0
 pydantic==2.13.5
+tksvg==0.7.4
 ttkbootstrap==2.2.3
