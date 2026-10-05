@@ -69,6 +69,14 @@ def build_connect(parent_frame, signals):
     for signal in signals:
         ttk.Label(connectframe, text=signal).pack()
 
+def build_temperatures(parent_frame, signals):
+    """Crea els elements visuals del Temperatures una sola vegada."""
+    tempframe = ttk.Frame(parent_frame, padding=10, borderwidth=2, relief="ridge")
+    tempframe.pack(pady=20)
+
+    for signal in signals:
+        ttk.Label(tempframe, text=signal).pack()
+
 def create_app():
     root = ttk.Window(themename="bootstrap-light")
     root.title("CANEM Viewer")
@@ -82,7 +90,7 @@ def create_app():
 
     # Estructura de navegació
     mainmenu = {
-        "Visualitzar": ("Traffic light", "Gràfics", "BMS", "SDC", "Dinàmica"),
+        "Visualitzar": ("Traffic light", "Gràfics", "BMS", "SDC", "Dinàmica","Temperatures"),
         "Configuració": ("Connectar", "Editar fitxers"),
     }
 
@@ -108,6 +116,8 @@ def create_app():
                 build_grafics(sub_frame, dict_signals)
             if sub_title == "Connectar":
                 build_connect(sub_frame, dict_signals)
+            if sub_title == "Temperatures":
+                build_temperatures(sub_frame, dict_signals)
     return root
 
 
