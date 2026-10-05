@@ -1,3 +1,4 @@
 cantools==44.1.0
+matplotlib==3.11.2
 pydantic==2.13.5
 ttkbootstrap==2.2.3

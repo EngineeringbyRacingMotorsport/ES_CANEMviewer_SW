@@ -31,3 +31,6 @@ gen-example:
 
 dbc-to-json *ARGS:
     {{ VENV_PYTHON_PATH }} -m tools.dbc_to_json {{ ARGS }}
+
+plot *ARGS:
+    {{ VENV_PYTHON_PATH }} -m tools.plot {{ ARGS }}
