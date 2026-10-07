@@ -1,5 +1,5 @@
 import sqlite3
-from .utils import read_text_file
+from .utils import quote_ident, read_text_file
 from cantools.database import load_string
 from cantools.database.can import Database, Node
 from cantools.database.can import Message as CanMessage
@@ -234,10 +234,6 @@ def get_can(path: str | None = None) -> Database | None:
 def get_connection(path: str | None = None) -> sqlite3.Connection | None:
     schema = get_all(path)
     return schema[2] if schema is not None else None
-
-
-def quote_ident(name: str) -> str:
-    return '"' + name.replace('"', '""') + '"'
 
 
 TIMESTAMP_COLUMN: Final[str] = "__timestamp_"

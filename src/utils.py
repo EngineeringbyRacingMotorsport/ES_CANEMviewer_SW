@@ -23,3 +23,7 @@ def unwrap[T](value: T | None) -> T:
     if value is None:
         raise ValueError("Value was null")
     return value
+
+
+def quote_ident(name: str) -> str:
+    return '"' + name.replace('"', '""') + '"'
