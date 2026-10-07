@@ -15,8 +15,10 @@ PIP_PATH := VENV_SCRIPTS / ("pip" + EXE_EXTENSION)
 PYTHON_PATH := VENV_SCRIPTS / ("python" + EXE_EXTENSION)
 
 venv:
-    python3 -m venv .venv
+    python3 -m venv --system-site-packages .venv
     {{ PIP_PATH }} install -r requirements.txt
+    # Tk 8.7+ renders SVGs itself; older versions need tksvg
+    {{ PYTHON_PATH }} -c "import subprocess, sys, tkinter; tkinter.TkVersion < 8.7 and subprocess.check_call([sys.executable, '-m', 'pip', 'install', '-r', 'requirements-tk86.txt'])"
 
 run:
     {{ PYTHON_PATH }} -m src.main

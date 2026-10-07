@@ -1,9 +1,21 @@
 from datetime import datetime
 from pathlib import Path
 
+import tkinter as tk
 import ttkbootstrap as ttk
-import tksvg
 from .json import parse_schema
+
+ICONS_DIR = Path(__file__).parent / "icons"
+
+
+def load_svg(name: str, width: int) -> tk.PhotoImage:
+    """Tk 8.7+ renders SVGs itself; older versions need the tksvg package."""
+    path = str(ICONS_DIR / name)
+    if tk.TkVersion >= 8.7:
+        return tk.PhotoImage(file=path, format=f"svg -scaletowidth {width}")
+    import tksvg
+
+    return tksvg.SvgImage(file=path, scaletowidth=width)
 
 def build_trafficlight(parent_frame, signals):
     """Crea els elements visuals del Traffic Light una sola vegada."""
@@ -45,21 +57,26 @@ def build_grafics(parent_frame, signals):
     config_frame = ttk.Frame(parent_frame, height=700, width=1300, borderwidth=2, relief="ridge")
     config_frame.pack(pady=5, padx=5, anchor="nw", side="left", expand=False)
 
-    square = tksvg.SvgImage(file="src/icons/square.svg", scaletowidth=24)
-    rows_2 = tksvg.SvgImage(file="src/icons/rows-2.svg", scaletowidth=24)
-    columns_2 = tksvg.SvgImage(file="src/icons/columns-2.svg", scaletowidth=24)
-    icon_2x2 = tksvg.SvgImage(file="src/icons/grid-2x2.svg", scaletowidth=24)
+    square = load_svg("square.svg", 24)
+    rows_2 = load_svg("rows-2.svg", 24)
+    columns_2 = load_svg("columns-2.svg", 24)
+    icon_2x2 = load_svg("grid-2x2.svg", 24)
 
-    square_button = ttk.Button(config_frame, image=square, padding=(0,0), cursor="hand2").pack(padx=5, pady=5, side="left")
+    # pack() returns None, so keep the button to hold a reference to its image
+    square_button = ttk.Button(config_frame, image=square, padding=(0,0), cursor="hand2")
+    square_button.pack(padx=5, pady=5, side="left")
     square_button.image = square
 
-    rows_2_button = ttk.Button(config_frame, image=rows_2, padding=(0,0), cursor="hand2").pack(padx=5, pady=5, side="left")
+    rows_2_button = ttk.Button(config_frame, image=rows_2, padding=(0,0), cursor="hand2")
+    rows_2_button.pack(padx=5, pady=5, side="left")
     rows_2_button.image = rows_2
 
-    columns_2_button = ttk.Button(config_frame, image=columns_2, padding=(0,0), cursor="hand2").pack(padx=5, pady=5, side="left")
+    columns_2_button = ttk.Button(config_frame, image=columns_2, padding=(0,0), cursor="hand2")
+    columns_2_button.pack(padx=5, pady=5, side="left")
     columns_2_button.image = columns_2
 
-    icon_2x2_button = ttk.Button(config_frame, image=icon_2x2, padding=(0,0), cursor="hand2").pack(padx=5, pady=5, side="left")
+    icon_2x2_button = ttk.Button(config_frame, image=icon_2x2, padding=(0,0), cursor="hand2")
+    icon_2x2_button.pack(padx=5, pady=5, side="left")
     icon_2x2_button.image = icon_2x2
 def build_connect(parent_frame, signals):
     """Crea els elements visuals del Connect una sola vegada."""
