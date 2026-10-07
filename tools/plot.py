@@ -12,16 +12,14 @@ import os
 import sqlite3
 import sys
 import tkinter as tk
-from tkinter import filedialog, messagebox
-
 import ttkbootstrap as ttk
 from matplotlib.axes import Axes
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 from matplotlib.figure import Figure
-
 from src.can import read_file
 from src.schema import TIMESTAMP_COLUMN, Schema, Signal, get_all, quote_ident
 from src.utils import read_text_file, unwrap
+from tkinter import filedialog, messagebox
 
 Series = tuple[list[float], list[float]]
 
@@ -133,7 +131,9 @@ class PlotApp:
         self.cache.clear()
         self.plotted.clear()
         self.counts = {
-            name: self.conn.execute(f"SELECT COUNT(*) FROM {quote_ident(name)}").fetchone()[0]
+            name: self.conn.execute(
+                f"SELECT COUNT(*) FROM {quote_ident(name)}"
+            ).fetchone()[0]
             for name in self.schema.Messages
         }
         self.root.title(f"CANEM Plot - {os.path.basename(data_path)}")
@@ -280,7 +280,10 @@ class PlotApp:
         if not signal.Choices:
             return
         # Physical value of each raw choice, as stored in the database
-        ticks = {raw * signal.Factor + signal.Offset: text for raw, text in signal.Choices.items()}
+        ticks = {
+            raw * signal.Factor + signal.Offset: text
+            for raw, text in signal.Choices.items()
+        }
         ax.set_yticks(list(ticks), list(ticks.values()))
 
 
