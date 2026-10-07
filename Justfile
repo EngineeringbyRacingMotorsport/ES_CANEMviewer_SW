@@ -26,5 +26,5 @@ run:
 gen-example:
     {{ PYTHON_PATH }} -m tools.gen_example
 
-gen-schema:
-    {{ PYTHON_PATH }} -m tools.gen_schema
+plot *ARGS:
+    {{ VENV_PYTHON_PATH }} -m tools.plot {{ ARGS }}

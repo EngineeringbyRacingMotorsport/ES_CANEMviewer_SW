@@ -1,0 +1,941 @@
+{
+  "FormatVersion": 1,
+  "Nodes": [
+    "BMS",
+    "Inverter",
+    "IMD",
+    "FrontECU",
+    "RearECU",
+    "HVAB",
+    "HVDB",
+    "TSAL",
+    "SDC"
+  ],
+  "Attributes": {
+    "BusType": "J1939"
+  },
+  "Messages": {
+    "Charger_Config": {
+      "Id": "0x120",
+      "FrameFormat": "standard",
+      "Length": 8,
+      "Signals": {
+        "CpDIGwmaxi": {
+          "StartBit": 23,
+          "Length": 16,
+          "ByteOrder": "big_endian",
+          "Factor": 0.1,
+          "Unit": "A"
+        },
+        "CpDIGwenable": {
+          "StartBit": 32,
+          "Length": 1,
+          "ByteOrder": "big_endian"
+        },
+        "CpDIGwmaxv": {
+          "StartBit": 7,
+          "Length": 16,
+          "ByteOrder": "big_endian",
+          "Factor": 0.1,
+          "Unit": "V"
+        }
+      }
+    },
+    "Charger_Setup": {
+      "Id": "0x1806E5F4",
+      "FrameFormat": "extended",
+      "Length": 8,
+      "Signals": {
+        "CpDIGsmaxv": {
+          "StartBit": 7,
+          "Length": 16,
+          "ByteOrder": "big_endian",
+          "Factor": 0.1,
+          "Unit": "V"
+        },
+        "CpDIGsmaxi": {
+          "StartBit": 23,
+          "Length": 16,
+          "ByteOrder": "big_endian",
+          "Factor": 0.1,
+          "Unit": "A"
+        },
+        "CpDIGsenable": {
+          "StartBit": 32,
+          "Length": 1,
+          "ByteOrder": "big_endian"
+        }
+      }
+    },
+    "Charger_Feedback": {
+      "Id": "0x18FF50E5",
+      "FrameFormat": "extended",
+      "Length": 8,
+      "Signals": {
+        "CpDIGfv": {
+          "StartBit": 7,
+          "Length": 16,
+          "ByteOrder": "big_endian",
+          "Factor": 0.1,
+          "Unit": "V"
+        },
+        "CpDIGfi": {
+          "StartBit": 23,
+          "Length": 16,
+          "ByteOrder": "big_endian",
+          "Factor": 0.1,
+          "Unit": "A"
+        },
+        "CpDIGfenable": {
+          "StartBit": 32,
+          "Length": 1,
+          "ByteOrder": "big_endian"
+        }
+      }
+    },
+    "InverterTX": {
+      "Id": "0x103",
+      "FrameFormat": "j1939",
+      "Length": 8,
+      "Senders": [
+        "Inverter"
+      ],
+      "CycleTime": 100,
+      "Signals": {
+        "iWarn": {
+          "StartBit": 24,
+          "Length": 16,
+          "MultiplexerIds": [
+            143
+          ]
+        },
+        "iVout": {
+          "StartBit": 8,
+          "Length": 16,
+          "Maximum": 4000,
+          "MultiplexerIds": [
+            138
+          ]
+        },
+        "iTmot": {
+          "StartBit": 8,
+          "Length": 16,
+          "Maximum": 32767,
+          "MultiplexerIds": [
+            73
+          ]
+        },
+        "iTinv": {
+          "StartBit": 8,
+          "Length": 16,
+          "Maximum": 32767,
+          "MultiplexerIds": [
+            74
+          ]
+        },
+        "iRPM": {
+          "StartBit": 8,
+          "Length": 16,
+          "Maximum": 32767,
+          "MultiplexerIds": [
+            48
+          ]
+        },
+        "iPar": {
+          "StartBit": 8,
+          "Length": 16,
+          "Signed": true,
+          "MultiplexerIds": [
+            160
+          ]
+        },
+        "iIout": {
+          "StartBit": 8,
+          "Length": 16,
+          "Maximum": 2000,
+          "MultiplexerIds": [
+            72
+          ]
+        },
+        "iErr": {
+          "StartBit": 8,
+          "Length": 16,
+          "MultiplexerIds": [
+            143
+          ]
+        },
+        "RegID": {
+          "StartBit": 0,
+          "Length": 8,
+          "Multiplexer": true
+        }
+      }
+    },
+    "IMD_Info_ITSystem": {
+      "Id": "0x3A",
+      "FrameFormat": "j1939",
+      "Length": 5,
+      "Senders": [
+        "IMD"
+      ],
+      "CycleTime": 1000,
+      "Signals": {
+        "imdUnbalmeascount": {
+          "StartBit": 32,
+          "Length": 8
+        },
+        "imdUnbalancedvalue": {
+          "StartBit": 24,
+          "Length": 8,
+          "Maximum": 100,
+          "Unit": "%"
+        },
+        "imdCapmeascount": {
+          "StartBit": 16,
+          "Length": 8
+        },
+        "imdCapacityValue": {
+          "StartBit": 0,
+          "Length": 16,
+          "Factor": 0.1,
+          "Unit": "uF"
+        }
+      }
+    },
+    "IMD_Info_Voltage": {
+      "Id": "0x39",
+      "FrameFormat": "j1939",
+      "Length": 6,
+      "Senders": [
+        "IMD"
+      ],
+      "CycleTime": 1000,
+      "Signals": {
+        "imdHVsystvolt": {
+          "StartBit": 32,
+          "Length": 16,
+          "Factor": 0.05,
+          "Offset": -1606.4,
+          "Unit": "V"
+        },
+        "imdHVposearth": {
+          "StartBit": 16,
+          "Length": 16,
+          "Factor": 0.05,
+          "Offset": -1606.4,
+          "Unit": "V"
+        },
+        "imdHVnegerth": {
+          "StartBit": 0,
+          "Length": 16,
+          "Factor": 0.05,
+          "Offset": -1606.4,
+          "Unit": "V"
+        }
+      }
+    },
+    "IMD_Info_IsolationDetail": {
+      "Id": "0x38",
+      "FrameFormat": "j1939",
+      "Length": 8,
+      "Senders": [
+        "IMD"
+      ],
+      "CycleTime": 1000,
+      "Signals": {
+        "imdIquality": {
+          "StartBit": 56,
+          "Length": 8,
+          "Maximum": 100,
+          "Unit": "%"
+        },
+        "imdIsomeascount": {
+          "StartBit": 48,
+          "Length": 8
+        },
+        "imdRisooriginal": {
+          "StartBit": 32,
+          "Length": 16,
+          "Unit": "kOhm"
+        },
+        "imdRisopos": {
+          "StartBit": 16,
+          "Length": 16,
+          "Unit": "kOhm"
+        },
+        "imdRisoneg": {
+          "StartBit": 0,
+          "Length": 16,
+          "Unit": "kOhm"
+        }
+      }
+    },
+    "IMD_Info_General": {
+      "Id": "0x37",
+      "FrameFormat": "j1939",
+      "Length": 8,
+      "Senders": [
+        "IMD"
+      ],
+      "CycleTime": 500,
+      "Signals": {
+        "imdWarningsalarms": {
+          "StartBit": 32,
+          "Length": 16
+        },
+        "imdRisostatus": {
+          "StartBit": 16,
+          "Length": 8
+        },
+        "imdRisocorrect": {
+          "StartBit": 0,
+          "Length": 16
+        },
+        "imdMeascount": {
+          "StartBit": 24,
+          "Length": 8
+        },
+        "imdDeviceactivi": {
+          "StartBit": 48,
+          "Length": 8
+        }
+      }
+    },
+    "InverterRX": {
+      "Id": "0x102",
+      "FrameFormat": "j1939",
+      "Length": 8,
+      "Senders": [
+        "Inverter"
+      ],
+      "CycleTime": 20,
+      "Signals": {
+        "FpANLRpot": {
+          "StartBit": 8,
+          "Length": 16,
+          "Signed": true,
+          "Comment": "Inverter torque setpoint"
+        }
+      }
+    },
+    "RearECU_M3": {
+      "Id": "0x202",
+      "FrameFormat": "j1939",
+      "Length": 8,
+      "Senders": [
+        "RearECU"
+      ],
+      "CycleTime": 100,
+      "Signals": {
+        "IpT_Mot": {
+          "StartBit": 16,
+          "Length": 16,
+          "Receivers": [
+            "RearECU"
+          ]
+        },
+        "IpT_IGBT": {
+          "StartBit": 0,
+          "Length": 16,
+          "Receivers": [
+            "RearECU"
+          ]
+        },
+        "IpErrL2": {
+          "StartBit": 48,
+          "Length": 8,
+          "Receivers": [
+            "RearECU"
+          ]
+        },
+        "IpErrL1": {
+          "StartBit": 32,
+          "Length": 8,
+          "Receivers": [
+            "RearECU"
+          ]
+        },
+        "IpErrH2": {
+          "StartBit": 56,
+          "Length": 8,
+          "Receivers": [
+            "RearECU"
+          ]
+        },
+        "IpErrH1": {
+          "StartBit": 40,
+          "Length": 8,
+          "Receivers": [
+            "RearECU"
+          ]
+        }
+      }
+    },
+    "FrontECU_M1": {
+      "Id": "0x100",
+      "FrameFormat": "j1939",
+      "Length": 7,
+      "Senders": [
+        "FrontECU"
+      ],
+      "CycleTime": 20,
+      "Signals": {
+        "FpDIGRpot": {
+          "StartBit": 0,
+          "Length": 8,
+          "Factor": 0.392157,
+          "Maximum": 100,
+          "Unit": "%",
+          "Comment": "Right throttle position"
+        },
+        "FpDIGLpot": {
+          "StartBit": 8,
+          "Length": 8,
+          "Factor": 0.392157,
+          "Maximum": 100,
+          "Unit": "%",
+          "Comment": "Left throttle position"
+        },
+        "FpDIGRvel": {
+          "StartBit": 16,
+          "Length": 8,
+          "Unit": "km/h",
+          "Receivers": [
+            "FrontECU"
+          ]
+        },
+        "FpDIGLvel": {
+          "StartBit": 24,
+          "Length": 8,
+          "Unit": "km/h",
+          "Receivers": [
+            "FrontECU"
+          ]
+        },
+        "FpANLbrake": {
+          "StartBit": 32,
+          "Length": 8,
+          "Factor": 0.27451,
+          "Maximum": 70,
+          "Unit": "MPa",
+          "Comment": "Front brake pressure",
+          "Receivers": [
+            "FrontECU"
+          ]
+        }
+      }
+    },
+    "FrontECU_M2": {
+      "Id": "0x101",
+      "FrameFormat": "j1939",
+      "Length": 5,
+      "Senders": [
+        "FrontECU"
+      ],
+      "CycleTime": 100,
+      "Signals": {
+        "FpINTtsoff": {
+          "StartBit": 0,
+          "Length": 1,
+          "Receivers": [
+            "FrontECU"
+          ]
+        },
+        "FpINTsbms": {
+          "StartBit": 1,
+          "Length": 1,
+          "Receivers": [
+            "FrontECU"
+          ]
+        },
+        "FpINTr2d": {
+          "StartBit": 2,
+          "Length": 1,
+          "Receivers": [
+            "FrontECU"
+          ]
+        },
+        "FpINTmenu": {
+          "StartBit": 3,
+          "Length": 1,
+          "Receivers": [
+            "FrontECU"
+          ]
+        },
+        "FpDIGmicrosd": {
+          "StartBit": 4,
+          "Length": 1,
+          "Receivers": [
+            "FrontECU"
+          ]
+        },
+        "FpSDCinertia": {
+          "StartBit": 8,
+          "Length": 1,
+          "Receivers": [
+            "FrontECU"
+          ]
+        },
+        "FpSDCbots": {
+          "StartBit": 9,
+          "Length": 1,
+          "Receivers": [
+            "FrontECU"
+          ]
+        },
+        "FpSDCcsdb": {
+          "StartBit": 10,
+          "Length": 1,
+          "Receivers": [
+            "FrontECU"
+          ]
+        },
+        "FpERRapps": {
+          "StartBit": 11,
+          "Length": 1,
+          "Receivers": [
+            "FrontECU"
+          ]
+        },
+        "FpDIGrefri": {
+          "StartBit": 12,
+          "Length": 1,
+          "Receivers": [
+            "FrontECU"
+          ]
+        },
+        "FpDIGr2d": {
+          "StartBit": 13,
+          "Length": 1,
+          "Comment": "R2D status",
+          "Receivers": [
+            "FrontECU"
+          ]
+        },
+        "FpDIGvel": {
+          "StartBit": 16,
+          "Length": 8,
+          "Unit": "km/h",
+          "Receivers": [
+            "FrontECU"
+          ]
+        },
+        "FpSHU": {
+          "StartBit": 24,
+          "Length": 16,
+          "Maximum": 5000,
+          "Unit": "mA",
+          "Receivers": [
+            "FrontECU"
+          ]
+        }
+      }
+    },
+    "RearECU_M1": {
+      "Id": "0x200",
+      "FrameFormat": "j1939",
+      "Length": 6,
+      "Senders": [
+        "RearECU"
+      ],
+      "CycleTime": 100,
+      "Signals": {
+        "RpSHU": {
+          "StartBit": 24,
+          "Length": 16,
+          "Maximum": 5000,
+          "Unit": "mA",
+          "Receivers": [
+            "RearECU"
+          ]
+        },
+        "RpSDChvd": {
+          "StartBit": 0,
+          "Length": 1,
+          "Unit": "mm",
+          "Receivers": [
+            "RearECU"
+          ]
+        },
+        "RpSDCtsms": {
+          "StartBit": 1,
+          "Length": 1,
+          "Unit": "mm",
+          "Receivers": [
+            "RearECU"
+          ]
+        },
+        "RpSDClsdb": {
+          "StartBit": 3,
+          "Length": 1,
+          "Unit": "km/h",
+          "Receivers": [
+            "RearECU"
+          ]
+        },
+        "RpSDCrsdb": {
+          "StartBit": 2,
+          "Length": 1,
+          "Unit": "km/h",
+          "Receivers": [
+            "RearECU"
+          ]
+        },
+        "RpSTAbrkledR": {
+          "StartBit": 4,
+          "Length": 1,
+          "Unit": "degC",
+          "Receivers": [
+            "RearECU"
+          ]
+        },
+        "RpSTAbrkledG": {
+          "StartBit": 5,
+          "Length": 1,
+          "Unit": "degC",
+          "Receivers": [
+            "RearECU"
+          ]
+        },
+        "RpSTAbrkledB": {
+          "StartBit": 6,
+          "Length": 1,
+          "Unit": "degC",
+          "Receivers": [
+            "RearECU"
+          ]
+        },
+        "RpSIGlvs": {
+          "StartBit": 8,
+          "Length": 16,
+          "Unit": "degC",
+          "Receivers": [
+            "RearECU"
+          ]
+        }
+      }
+    },
+    "RearECU_M2": {
+      "Id": "0x201",
+      "FrameFormat": "j1939",
+      "Length": 8,
+      "Senders": [
+        "RearECU"
+      ],
+      "CycleTime": 20,
+      "Signals": {
+        "IpV": {
+          "StartBit": 32,
+          "Length": 16,
+          "Receivers": [
+            "RearECU"
+          ]
+        },
+        "IpRPM": {
+          "StartBit": 0,
+          "Length": 16,
+          "Receivers": [
+            "RearECU"
+          ]
+        },
+        "IpPar": {
+          "StartBit": 48,
+          "Length": 16,
+          "Receivers": [
+            "RearECU"
+          ]
+        },
+        "IpI": {
+          "StartBit": 16,
+          "Length": 16,
+          "Receivers": [
+            "RearECU"
+          ]
+        }
+      }
+    },
+    "HVAB": {
+      "Id": "0x300",
+      "FrameFormat": "j1939",
+      "Length": 3,
+      "Senders": [
+        "HVAB"
+      ],
+      "CycleTime": 100,
+      "Signals": {
+        "ApTHRhv": {
+          "StartBit": 0,
+          "Length": 1,
+          "Receivers": [
+            "HVAB"
+          ]
+        },
+        "ApSHU": {
+          "StartBit": 8,
+          "Length": 16,
+          "Maximum": 5000,
+          "Unit": "mA",
+          "Receivers": [
+            "HVAB"
+          ]
+        }
+      }
+    },
+    "HVDB": {
+      "Id": "0x400",
+      "FrameFormat": "j1939",
+      "Length": 6,
+      "Senders": [
+        "HVDB"
+      ],
+      "CycleTime": 100,
+      "Signals": {
+        "BpTHRbrake": {
+          "StartBit": 0,
+          "Length": 1,
+          "Receivers": [
+            "HVDB"
+          ]
+        },
+        "BpTHRcurrent": {
+          "StartBit": 1,
+          "Length": 1,
+          "Receivers": [
+            "HVDB"
+          ]
+        },
+        "BpERRplaus": {
+          "StartBit": 2,
+          "Length": 1,
+          "Receivers": [
+            "HVDB"
+          ]
+        },
+        "BpERRtimer": {
+          "StartBit": 3,
+          "Length": 1,
+          "Receivers": [
+            "HVDB"
+          ]
+        },
+        "BpSDC": {
+          "StartBit": 4,
+          "Length": 1,
+          "Receivers": [
+            "HVDB"
+          ]
+        },
+        "DpSDC": {
+          "StartBit": 8,
+          "Length": 1,
+          "Receivers": [
+            "HVDB"
+          ]
+        },
+        "DpTHRhv": {
+          "StartBit": 9,
+          "Length": 1,
+          "Receivers": [
+            "HVDB"
+          ]
+        },
+        "DpLCHdischarge": {
+          "StartBit": 10,
+          "Length": 1,
+          "Receivers": [
+            "HVDB"
+          ]
+        },
+        "DpSDCintlck1": {
+          "StartBit": 11,
+          "Length": 1,
+          "Receivers": [
+            "HVDB"
+          ]
+        },
+        "DpSDCintlck2": {
+          "StartBit": 12,
+          "Length": 1,
+          "Receivers": [
+            "HVDB"
+          ]
+        },
+        "BpSHU": {
+          "StartBit": 16,
+          "Length": 16,
+          "Maximum": 5000,
+          "Unit": "mA",
+          "Receivers": [
+            "HVDB"
+          ]
+        },
+        "DpSHU": {
+          "StartBit": 32,
+          "Length": 16,
+          "Maximum": 5000,
+          "Unit": "mA",
+          "Receivers": [
+            "HVDB"
+          ]
+        }
+      }
+    },
+    "TSALGreen": {
+      "Id": "0x500",
+      "FrameFormat": "j1939",
+      "Length": 2,
+      "Senders": [
+        "TSAL"
+      ],
+      "CycleTime": 200,
+      "Signals": {
+        "TpDIGspre": {
+          "StartBit": 0,
+          "Length": 1,
+          "Receivers": [
+            "TSAL"
+          ]
+        },
+        "TpDIGsairp": {
+          "StartBit": 1,
+          "Length": 1,
+          "Receivers": [
+            "TSAL"
+          ]
+        },
+        "TpDIGsairn": {
+          "StartBit": 2,
+          "Length": 1,
+          "Receivers": [
+            "TSAL"
+          ]
+        },
+        "TpDIGipre": {
+          "StartBit": 3,
+          "Length": 1,
+          "Receivers": [
+            "TSAL"
+          ]
+        },
+        "TpDIGiairp": {
+          "StartBit": 4,
+          "Length": 1,
+          "Receivers": [
+            "TSAL"
+          ]
+        },
+        "TpDIGiairn": {
+          "StartBit": 5,
+          "Length": 1,
+          "Receivers": [
+            "TSAL"
+          ]
+        },
+        "TpTHRhv": {
+          "StartBit": 8,
+          "Length": 1,
+          "Receivers": [
+            "TSAL"
+          ]
+        },
+        "TpERRscs": {
+          "StartBit": 9,
+          "Length": 1,
+          "Receivers": [
+            "TSAL"
+          ]
+        },
+        "TpTHRdis": {
+          "StartBit": 10,
+          "Length": 1,
+          "Receivers": [
+            "TSAL"
+          ]
+        },
+        "TpLCH": {
+          "StartBit": 11,
+          "Length": 1,
+          "Receivers": [
+            "TSAL"
+          ]
+        },
+        "TpINTled": {
+          "StartBit": 12,
+          "Length": 1,
+          "Receivers": [
+            "TSAL"
+          ]
+        }
+      }
+    },
+    "SDCReset": {
+      "Id": "0x600",
+      "FrameFormat": "j1939",
+      "Length": 3,
+      "Senders": [
+        "SDC"
+      ],
+      "CycleTime": 500,
+      "Signals": {
+        "SpERRbms": {
+          "StartBit": 0,
+          "Length": 1,
+          "Receivers": [
+            "SDC"
+          ]
+        },
+        "SpERRimd": {
+          "StartBit": 1,
+          "Length": 1,
+          "Receivers": [
+            "SDC"
+          ]
+        },
+        "SpLCHebms": {
+          "StartBit": 2,
+          "Length": 1,
+          "Receivers": [
+            "SDC"
+          ]
+        },
+        "SpLCHeimd": {
+          "StartBit": 3,
+          "Length": 1,
+          "Receivers": [
+            "SDC"
+          ]
+        },
+        "SpINTresbut": {
+          "StartBit": 4,
+          "Length": 1,
+          "Receivers": [
+            "SDC"
+          ]
+        },
+        "SpSDCbms": {
+          "StartBit": 5,
+          "Length": 1,
+          "Receivers": [
+            "SDC"
+          ]
+        },
+        "SpSDCimd": {
+          "StartBit": 6,
+          "Length": 1,
+          "Receivers": [
+            "SDC"
+          ]
+        },
+        "SpSHU": {
+          "StartBit": 8,
+          "Length": 16,
+          "Maximum": 5000,
+          "Unit": "mA",
+          "Receivers": [
+            "SDC"
+          ]
+        }
+      }
+    }
+  }
+}
