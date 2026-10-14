@@ -64,29 +64,14 @@ def get_state_at(
         # Looked up per signal, since multiplexed signals are only present in
         # some of the rows
         column = quote_ident(key)
-        before = conn.execute(
-            f"SELECT {ts}, {column} FROM {table} WHERE {column} IS NOT NULL AND {ts} <= ?"
+        value = conn.execute(
+            f"SELECT {column} FROM {table} WHERE {column} IS NOT NULL AND {ts} <= ?"
             f" ORDER BY {ts} DESC LIMIT 1",
             (timestamp,),
         ).fetchone()
-        if before is None:
+
+        if value is None:
             continue
-
-        after = conn.execute(
-            f"SELECT {ts}, {column} FROM {table} WHERE {column} IS NOT NULL AND {ts} > ?"
-            f" ORDER BY {ts} ASC LIMIT 1",
-            (timestamp,),
-        ).fetchone()
-
-        t0, v0 = before
-        t0 = float(t0)
-        v0 = float(v0)
-        value: float = v0
-        if after is not None:
-            t1, v1 = after
-            t1 = float(t1)
-            v1 = float(v1)
-            value = v0 + (v1 - v0) * (timestamp - t0) / (t1 - t0)
 
         limit = getattr(signal.Viewer.Limits, mode.name.lower())
         res[key] = (value, _state_of(value, limit))
