@@ -20,7 +20,7 @@ import time
 from can.typechecking import Channel
 from src.can import CanBusReceiver, detect_channels, supported_interfaces
 from src.schema import get_all, quote_ident
-from src.state import Mode, get_latest_state
+from src.state import Phase, get_latest_state
 from src.utils import unwrap
 
 # What each interface needs installed, for when it can't be opened
@@ -45,7 +45,7 @@ def main() -> int:
     )
     parser.add_argument("--bitrate", type=int, help="e.g. 500000")
     parser.add_argument("--message", help="message whose signals to show")
-    parser.add_argument("--mode", choices=[m.name for m in Mode], default=Mode.I.name)
+    parser.add_argument("--mode", choices=[m.name for m in Phase], default=Phase.I.name)
     parser.add_argument("--json", default="EMXCAN.json", help="signal metadata file")
     parser.add_argument("--save", help="SQLite file to write the received data to")
     args = parser.parse_args()
@@ -82,7 +82,7 @@ def main() -> int:
         while receiver.running:
             time.sleep(1)
             receiver.flush()
-            show(receiver, args.message, Mode[args.mode])
+            show(receiver, args.message, Phase[args.mode])
         print(f"Receiving stopped: {receiver.last_error}", file=sys.stderr)
     except KeyboardInterrupt:
         pass
@@ -124,7 +124,7 @@ def pick_channel(
     return None
 
 
-def show(receiver: CanBusReceiver, message: str | None, mode: Mode) -> None:
+def show(receiver: CanBusReceiver, message: str | None, mode: Phase) -> None:
     schema, _, conn = unwrap(get_all())
     print(f"\n{receiver.received} frames stored, {receiver.dropped} dropped")
     if receiver.last_error is not None:
