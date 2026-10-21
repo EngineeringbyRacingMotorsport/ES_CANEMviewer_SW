@@ -33,3 +33,6 @@ gen-example:
 
 plot *ARGS:
     {{ VENV_PYTHON_PATH }} -m tools.plot {{ ARGS }}
+
+live *ARGS:
+    {{ VENV_PYTHON_PATH }} -m tools.live {{ ARGS }}
