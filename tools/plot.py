@@ -3,8 +3,9 @@ Plots the signals of a recorded drive against time.
 
 Run from the project root: python -m tools.plot [json_path] [data_path]
 
-The data file is either a packet file (.cpf, as written by tools.gen_example) or a
-database dump (.sqlite, as written by src.main). Select signals in the tree on the
+The data file is either a packet file (.cpf, as written by tools.gen_example), a
+database dump (.sqlite, as written by src.main or tools.live), or a log recorded by
+another tool (CANalyzer .blf/.asc, PCAN-View .trc, candump .log). Select signals in the tree on the
 left to plot them; hold Ctrl or Shift to select several.
 """
 
@@ -16,7 +17,7 @@ import ttkbootstrap as ttk
 from matplotlib.axes import Axes
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 from matplotlib.figure import Figure
-from src.can import read_file
+from src.can import read_recording
 from src.schema import TIMESTAMP_COLUMN, Schema, Signal, get_all, quote_ident
 from src.utils import read_text_file, unwrap
 from tkinter import filedialog, messagebox
@@ -33,7 +34,7 @@ def load_data(json_path: str, data_path: str) -> tuple[Schema, sqlite3.Connectio
             conn.deserialize(f.read())
     else:
         schema, _, conn = unwrap(get_all(json_path))
-        read_file(data_path)
+        read_recording(data_path)
     return (schema, conn)
 
 
@@ -146,9 +147,10 @@ class PlotApp:
         path = filedialog.askopenfilename(
             parent=self.root,
             filetypes=[
-                ("Recorded data", "*.cpf *.sqlite"),
+                ("Recorded data", "*.cpf *.sqlite *.blf *.asc *.trc *.log"),
                 ("Packet files", "*.cpf"),
                 ("SQLite databases", "*.sqlite"),
+                ("CAN logs", "*.blf *.asc *.trc *.log"),
             ],
         )
         if not path:

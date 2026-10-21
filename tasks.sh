@@ -7,6 +7,7 @@
 #     ./tasks.sh run
 #     ./tasks.sh gen-example
 #     ./tasks.sh plot [json_path] [data_path]
+#     ./tasks.sh live [--list] [--interface ...] [--channel ...] [...]
 
 set -euo pipefail
 
@@ -45,8 +46,11 @@ case "$recipe" in
     plot)
         "$venv_python" -m tools.plot "$@"
         ;;
+    live)
+        "$venv_python" -m tools.live "$@"
+        ;;
     *)
-        echo "Unknown recipe '$recipe'. Available recipes: venv, run, gen-example, plot" >&2
+        echo "Unknown recipe '$recipe'. Available recipes: venv, run, gen-example, plot, live" >&2
         exit 1
         ;;
 esac
