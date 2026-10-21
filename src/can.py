@@ -201,6 +201,7 @@ def _upload_packet(
         f"VALUES ({', '.join('?' * len(values))})",
         values,
     )
+
     return True
 
 
