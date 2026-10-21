@@ -3,9 +3,12 @@ from pathlib import Path
 
 import tkinter as tk
 import ttkbootstrap as ttk
-from .json import parse_schema
+from .schema import Schema, get_schema
+from .utils import unwrap
 
 ICONS_DIR = Path(__file__).parent / "icons"
+SCHEMA_PATH = "EMXCAN.json"
+NO_SENDER = "Sense emissor"
 
 
 def load_svg(name: str, width: int) -> tk.PhotoImage:
@@ -16,6 +19,18 @@ def load_svg(name: str, width: int) -> tk.PhotoImage:
     import tksvg
 
     return tksvg.SvgImage(file=path, scaletowidth=width)
+
+
+def group_signals(schema: Schema) -> dict[str, dict[str, list[str]]]:
+    """Signal names of each message, grouped by the node sending it.
+
+    Nodes follow the order of the schema; messages without a sender go last.
+    """
+    groups: dict[str, dict[str, list[str]]] = {node: {} for node in schema.Nodes}
+    for name, message in schema.Messages.items():
+        for node in message.Senders or [NO_SENDER]:
+            groups.setdefault(node, {})[name] = list(message.Signals)
+    return {node: messages for node, messages in groups.items() if messages}
 
 def build_trafficlight(parent_frame, signals):
     """Crea els elements visuals del Traffic Light una sola vegada."""
@@ -103,7 +118,7 @@ def create_app():
     ttk.Style().configure("TButton", focusthickness=0)
 
     # Carrega de dades
-    dict_signals = parse_schema("EMXDATA.json").model_dump()
+    dict_signals = group_signals(unwrap(get_schema(SCHEMA_PATH)))
 
     # Estructura de navegació
     mainmenu = {
