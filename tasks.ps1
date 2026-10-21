@@ -6,6 +6,7 @@ Usage, from any folder:
     .\tasks.ps1 run
     .\tasks.ps1 gen-example
     .\tasks.ps1 plot [json_path] [data_path]
+    .\tasks.ps1 live [--list] [--interface ...] [--channel ...] [...]
 #>
 
 # No [Parameter] attributes, so that arguments for the recipe (even ones starting
@@ -53,8 +54,11 @@ try {
         "plot" {
             Invoke-Native $VenvPython -m tools.plot @RecipeArgs
         }
+        "live" {
+            Invoke-Native $VenvPython -m tools.live @RecipeArgs
+        }
         default {
-            throw "Unknown recipe '$Recipe'. Available recipes: venv, run, gen-example, plot"
+            throw "Unknown recipe '$Recipe'. Available recipes: venv, run, gen-example, plot, live"
         }
     }
 } finally {
