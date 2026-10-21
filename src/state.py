@@ -9,7 +9,7 @@ class State(Enum):
     CRITICAL = 2
 
 
-class Mode(Enum):
+class Phase(Enum):
     I = 0
     P = 1
     T = 2
@@ -19,7 +19,7 @@ class Mode(Enum):
 ## Latest value of each signal of the message, with its state under the mode's
 ## limits. Signals without a value yet are left out.
 def get_latest_state(
-    mode: Mode,
+    phase: Phase,
     message: Identifier,
 ) -> dict[str, tuple[int | float, State]]:
     schema, _, conn = unwrap(get_all())
@@ -28,7 +28,7 @@ def get_latest_state(
     limits = list[LimitSet | None]()
     for k, s in schema.Messages[message].Signals.items():
         keys.append(k)
-        limits.append(getattr(s.Viewer.Limits, mode.name.lower()))
+        limits.append(getattr(s.Viewer.Limits, phase.name.lower()))
 
     # Each signal is looked up on its own, since multiplexed signals are only
     # present in some of the rows
@@ -53,7 +53,7 @@ def get_latest_state(
 ## the last sample the last value is kept; signals without a sample at or before
 ## the time are left out.
 def get_state_at(
-    mode: Mode, message: Identifier, timestamp: float
+    phase: Phase, message: Identifier, timestamp: float
 ) -> dict[str, tuple[float, State]]:
     schema, _, conn = unwrap(get_all())
     table = quote_ident(message)
@@ -73,7 +73,7 @@ def get_state_at(
         if value is None:
             continue
 
-        limit = getattr(signal.Viewer.Limits, mode.name.lower())
+        limit = getattr(signal.Viewer.Limits, phase.name.lower())
         res[key] = (value, _state_of(value, limit))
     return res
 
