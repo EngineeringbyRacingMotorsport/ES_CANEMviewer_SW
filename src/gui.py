@@ -3,8 +3,12 @@ from pathlib import Path
 
 import tkinter as tk
 import ttkbootstrap as ttk
-from .schema import Schema, get_schema
+from .can import DRIVERS, CanBusReceiver, detect_channels, supported_interfaces
+from .schema import Schema, get_all, get_schema
 from .utils import unwrap
+from can.typechecking import AutoDetectedConfig
+
+POLL_MS = 200
 
 ICONS_DIR = Path(__file__).parent / "icons"
 SCHEMA_PATH = "EMXCAN.json"
@@ -89,13 +93,134 @@ def build_grafics(parent_frame, signals):
     icon_2x2_button = ttk.Button(config_frame, image=icon_2x2, padding=(0,0), cursor="hand2")
     icon_2x2_button.pack(padx=5, pady=5, side="left")
     icon_2x2_button.image = icon_2x2
-def build_connect(parent_frame, signals):
-    """Crea els elements visuals del Connect una sola vegada."""
-    connectframe = ttk.Frame(parent_frame, padding=10, borderwidth=2, relief="ridge")
-    connectframe.pack(pady=20)
+def build_connect(parent_frame):
+    """Connexió en directe a un adaptador CAN; les trames es desen a la base de dades."""
+    frame = ttk.Frame(parent_frame, padding=10, borderwidth=2, relief="ridge")
+    frame.pack(pady=20, padx=20, anchor="nw")
 
-    for signal in signals:
-        ttk.Label(connectframe, text=signal).pack()
+    channels: list[AutoDetectedConfig] = []
+    receiver: CanBusReceiver | None = None
+    job: str | None = None  # pending poll() timer
+
+    ttk.Label(frame, text="Adaptador:").grid(row=0, column=0, sticky="w", pady=4)
+    adapter = ttk.Combobox(frame, state="readonly", width=30)
+    adapter.grid(row=0, column=1, sticky="w", pady=4)
+    detect_button = ttk.Button(frame, text="⟳ Detectar", cursor="hand2")
+    detect_button.grid(row=0, column=2, sticky="w", padx=5)
+
+    ttk.Label(frame, text="Bitrate:").grid(row=1, column=0, sticky="w", pady=4)
+    bitrate_row = ttk.Frame(frame)
+    bitrate_row.grid(row=1, column=1, columnspan=2, sticky="w", pady=4)
+    bitrate = ttk.Entry(bitrate_row, width=12)
+    bitrate.pack(side="left")
+    ttk.Label(bitrate_row, text="buit = la que ja té l'adaptador").pack(side="left", padx=5)
+
+    buttons = ttk.Frame(frame)
+    buttons.grid(row=2, column=0, columnspan=3, sticky="w", pady=8)
+    connect_button = ttk.Button(buttons, text="Connectar", cursor="hand2")
+    connect_button.pack(side="left")
+    disconnect_button = ttk.Button(buttons, text="Desconnectar", cursor="hand2", state="disabled")
+    disconnect_button.pack(side="left", padx=5)
+
+    status = ttk.Label(frame, text="Desconnectat")
+    status.grid(row=3, column=0, columnspan=3, sticky="w")
+    error = ttk.Label(frame, text="", bootstyle="danger", wraplength=600)
+    error.grid(row=4, column=0, columnspan=3, sticky="w")
+
+    def counts(r: CanBusReceiver) -> str:
+        return f"{r.received} trames desades · {r.dropped} descartades"
+
+    def set_connected(connected: bool) -> None:
+        idle = "disabled" if connected else "normal"
+        adapter.configure(state="disabled" if connected else "readonly")
+        for widget in (bitrate, detect_button, connect_button):
+            widget.configure(state=idle)
+        disconnect_button.configure(state="normal" if connected else "disabled")
+
+    def detect() -> None:
+        nonlocal channels
+        try:
+            channels = detect_channels()
+        except Exception as e:
+            channels = []
+            error["text"] = f"No s'han pogut detectar els adaptadors: {e}"
+        adapter["values"] = [f"{c['interface']} · {c['channel']}" for c in channels]
+        if channels:
+            adapter.current(0)
+            error["text"] = ""
+        else:
+            adapter.set("")
+            error["text"] = error["text"] or f"No s'ha trobat cap adaptador ({', '.join(supported_interfaces())})"
+
+    def connect() -> None:
+        nonlocal receiver
+        text = bitrate.get().strip()
+        if adapter.current() < 0:
+            error["text"] = "Tria un adaptador"
+            return
+        if text and not (text.isdigit() and int(text) > 0):
+            error["text"] = "El bitrate ha de ser un nombre enter positiu, p. ex. 500000"
+            return
+
+        config = channels[adapter.current()]
+        interface, channel = config["interface"], config["channel"]
+        # Empty database: timestamps restart at 0, so old rows would look newer
+        _, can, conn = unwrap(get_all(SCHEMA_PATH))
+        r = CanBusReceiver(can, conn, interface, channel, int(text) if text else None)
+        try:
+            r.start()
+        except Exception as e:
+            hint = f"\nCal: {DRIVERS[interface]}" if interface in DRIVERS else ""
+            error["text"] = f"No s'ha pogut obrir {interface} canal {channel}: {e}{hint}"
+            return
+
+        receiver = r
+        error["text"] = ""
+        set_connected(True)
+        poll()
+
+    def disconnect(message: str = "") -> None:
+        nonlocal receiver, job
+        if job is not None:
+            frame.after_cancel(job)
+            job = None
+        if receiver is None:
+            return
+        try:
+            receiver.stop()
+        except Exception as e:
+            # e.g. the adapter was unplugged; keep what was received
+            message = message or str(e)
+        receiver.flush()
+        status["text"] = f"Desconnectat · {counts(receiver)}"
+        error["text"] = message
+        receiver = None
+        set_connected(False)
+
+    def poll() -> None:
+        nonlocal job
+        job = None
+        if receiver is None:
+            return
+        receiver.flush()
+        status["text"] = f"Connectat · {counts(receiver)}"
+        if receiver.last_error is not None:
+            error["text"] = f"Últim error: {receiver.last_error}"
+        if receiver.running:
+            job = frame.after(POLL_MS, poll)
+        else:
+            disconnect(f"Adaptador perdut: {receiver.last_error}")
+
+    def on_close() -> None:
+        disconnect()
+        root.destroy()
+
+    detect_button.configure(command=detect)
+    connect_button.configure(command=connect)
+    disconnect_button.configure(command=disconnect)
+    root = frame.winfo_toplevel()
+    root.protocol("WM_DELETE_WINDOW", on_close)
+    detect()
 
 def build_temperatures(parent_frame, signals):
     """Crea els elements visuals del Temperatures una sola vegada."""
@@ -143,7 +268,7 @@ def create_app():
             if sub_title == "Gràfics":
                 build_grafics(sub_frame, dict_signals)
             if sub_title == "Connectar":
-                build_connect(sub_frame, dict_signals)
+                build_connect(sub_frame)
             if sub_title == "Temperatures":
                 build_temperatures(sub_frame, dict_signals)
     return root

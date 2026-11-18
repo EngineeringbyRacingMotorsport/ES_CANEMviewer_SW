@@ -18,17 +18,10 @@ import argparse
 import sys
 import time
 from can.typechecking import Channel
-from src.can import CanBusReceiver, detect_channels, supported_interfaces
+from src.can import DRIVERS, CanBusReceiver, detect_channels, supported_interfaces
 from src.schema import get_all, quote_ident
 from src.state import Phase, get_latest_state, get_phase
 from src.utils import unwrap
-
-# What each interface needs installed, for when it can't be opened
-DRIVERS = {
-    "vector": "the Vector XL Driver Library (and the channel is assigned in Vector Hardware Config)",
-    "pcan": "PCAN-Basic (Windows) or PCBUSB from mac-can.com (macOS)",
-    "socketcan": "the interface is up (sudo ip link set can0 up type can bitrate 500000)",
-}
 
 
 def main() -> int:
