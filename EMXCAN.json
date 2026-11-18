@@ -469,6 +469,20 @@
             "FrontECU"
           ]
         },
+        "FpSTAphase": {
+          "StartBit": 5,
+          "Length": 3,
+          "Comment": "Vehicle phase: Idle, Precharge, TS active, Ready-to-drive",
+          "Receivers": [
+            "FrontECU"
+          ],
+          "Choices": {
+            "0": "I",
+            "1": "P",
+            "2": "T",
+            "3": "R"
+          }
+        },
         "FpSDCinertia": {
           "StartBit": 8,
           "Length": 1,
