@@ -101,6 +101,47 @@ def get_state_at(
     return res
 
 
+## Time (ms) of the latest sample of each signal of the message. Signals
+## without a sample yet are left out.
+def get_latest_times(message: Identifier) -> dict[str, int]:
+    schema, _, conn = unwrap(get_all())
+    keys = list(schema.Messages[message].Signals)
+    if not keys:
+        return {}
+    table = quote_ident(message)
+    ts = quote_ident(TIMESTAMP_COLUMN)
+    columns = ", ".join(
+        f"(SELECT MAX({ts}) FROM {table} WHERE {quote_ident(k)} IS NOT NULL)" for k in keys
+    )
+    row = conn.execute(f"SELECT {columns}").fetchone()
+    return {k: t for k, t in zip(keys, row) if t is not None}
+
+
+## Time (ms) of the newest frame of any message, None before the first one
+def get_newest_time() -> int | None:
+    schema, _, conn = unwrap(get_all())
+    if not schema.Messages:
+        return None
+    ts = quote_ident(TIMESTAMP_COLUMN)
+    columns = ", ".join(f"(SELECT MAX({ts}) FROM {quote_ident(m)})" for m in schema.Messages)
+    return max((t for t in conn.execute(f"SELECT {columns}").fetchone() if t is not None), default=None)
+
+
+## Last samples of a signal as (time in ms, value), oldest first
+def get_last_samples(
+    message: Identifier, signal: Identifier, count: int
+) -> list[tuple[int, int | float]]:
+    schema, _, conn = unwrap(get_all())
+    column = quote_ident(signal)
+    rows = conn.execute(
+        f"SELECT {quote_ident(TIMESTAMP_COLUMN)}, {column} FROM {quote_ident(message)}"
+        f" WHERE {column} IS NOT NULL"
+        f" ORDER BY {_latest_first(schema.Messages[message].Signals)} LIMIT ?",
+        (count,),
+    ).fetchall()
+    return rows[::-1]
+
+
 ## Newest sample first. Timestamps are rounded to ms, so samples can share one;
 ## rows are stored as they arrive, so the row id breaks the tie. A signal may
 ## take one of the row id's names, in which case another one is used.
