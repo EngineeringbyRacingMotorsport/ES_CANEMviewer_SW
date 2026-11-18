@@ -55,33 +55,26 @@ def build_trafficlight(parent_frame, signals):
 
         for row, (message, signals_in_message) in enumerate(messages.items()):
             message_frame = ttk.Frame(board_frame, borderwidth=2, relief="ridge")
-            message_frame.grid(row=row, column=1, pady=1, padx=2, sticky="ew")
+            message_frame.grid(row=row, column=1, pady=2, padx=2, sticky="ew")
 
             ttk.Label(message_frame, text=message, width=message_column_width, anchor="w").grid(
                 row=0, column=0, pady=2, padx=2, sticky="w"
             )
             for column, signal in enumerate(signals_in_message, start=1):
-                signal_frame = ttk.Frame(message_frame, borderwidth=0, relief=None)
-                signal_frame.grid(row=0, column=column, pady=0, padx=2, sticky="w")
-                # Two lines (name, value) in a smaller font, so every board fits the window;
-                # a negative width is a minimum, so values changing don't shift the row much
-                label = ttk.Label(signal_frame, padding=(5,0), justify="center", anchor="center", width=-6, font=("TkDefaultFont", 9))
+                signal_frame = ttk.Frame(message_frame, borderwidth=2, relief=None)
+                signal_frame.grid(row=0, column=column, pady=2, padx=2, sticky="w")
+                label = ttk.Label(signal_frame, text=signal, padding=(5,0))
                 label.pack(pady=0, padx=0, anchor="center")
                 labels.setdefault(message, {})[signal] = label
 
     def refresh() -> None:
-        """Latest value of each signal, coloured by its state in the current phase"""
-        schema = unwrap(get_schema())
+        """Colours each signal by its latest state in the current phase"""
         phase = get_phase() or Phase.I
         for message, message_labels in labels.items():
             states = get_latest_state(phase, message)
             for signal, label in message_labels.items():
-                if signal in states:
-                    value, state = states[signal]
-                    unit = schema.Messages[message].Signals[signal].Unit
-                    label.configure(text=f"{signal}\n{round(value, 2)} {unit}".rstrip(), background=STATE_COLOURS[state])
-                else:
-                    label.configure(text=f"{signal}\n—", background=NO_DATA_COLOUR)
+                state = states.get(signal)
+                label.configure(background=STATE_COLOURS[state[1]] if state else NO_DATA_COLOUR)
 
     tsal_status = ttk.Frame(parent_frame, height=50, borderwidth=2, relief="ridge")
     tsal_status.pack(pady=5, padx=5, anchor="nw", side="left", expand=True, fill="x")
