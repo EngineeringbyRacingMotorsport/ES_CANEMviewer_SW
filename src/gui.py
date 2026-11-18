@@ -192,8 +192,16 @@ def build_connect(parent_frame, on_data: Callable[[], None]):
 
         config = channels[adapter.current()]
         interface, channel = config["interface"], config["channel"]
-        # Vector channel numbers repeat on each device, so open the detected one
-        device = {k: config[k] for k in ("serial", "channel_index") if k in config}
+        if interface == "pcan" and text:
+            # python-can silently opens PCAN at 500000 for any other bitrate
+            from can.interfaces.pcan.basic import PCAN_BITRATES
+
+            if int(text) not in PCAN_BITRATES:
+                error["text"] = f"PCAN només admet aquests bitrates: {', '.join(map(str, sorted(PCAN_BITRATES)))}"
+                return
+        # Vector channel numbers repeat on each device, so open it on the detected
+        # one; by serial, which stays the same if the adapter is plugged in again
+        device = {"serial": config["serial"]} if "serial" in config else {}
         # Empty database: timestamps restart at 0, so old rows would look newer.
         # The previous one is only replaced once the adapter opens.
         _, can, _ = unwrap(get_all())
@@ -220,33 +228,40 @@ def build_connect(parent_frame, on_data: Callable[[], None]):
             job = None
         if receiver is None:
             return
+        r, receiver = receiver, None
+        set_connected(False)
         try:
-            receiver.stop()
+            r.stop()
         except Exception as e:
             # e.g. the adapter was unplugged; keep what was received
             message = message or str(e)
-        while receiver.pending:
-            receiver.flush()
-        on_data()
-        status["text"] = f"Desconnectat · {counts(receiver)}"
-        error["text"] = message
-        receiver = None
-        set_connected(False)
+        try:
+            while r.pending:
+                r.flush()
+            on_data()
+        finally:
+            status["text"] = f"Desconnectat · {counts(r)}"
+            error["text"] = message
 
     def poll() -> None:
         nonlocal job
         job = None
         if receiver is None:
             return
-        receiver.flush()
-        on_data()
+        try:
+            receiver.flush()
+            on_data()
+        except Exception as e:
+            # Stop rather than keep receiving with nothing storing the frames
+            disconnect(f"Error: {e}")
+            return
         status["text"] = f"Connectat · {counts(receiver)}"
         if receiver.last_error is not None:
             error["text"] = f"Últim error: {receiver.last_error}"
         if receiver.running:
             job = frame.after(POLL_MS, poll)
         else:
-            disconnect(f"Adaptador perdut: {receiver.last_error}")
+            disconnect(f"Adaptador perdut: {receiver.bus_error}")
 
     def on_close() -> None:
         try:
@@ -259,6 +274,8 @@ def build_connect(parent_frame, on_data: Callable[[], None]):
     disconnect_button.configure(command=disconnect)
     root = frame.winfo_toplevel()
     root.protocol("WM_DELETE_WINDOW", on_close)
+    # macOS's Quit (Cmd+Q) doesn't go through WM_DELETE_WINDOW
+    root.createcommand("::tk::mac::Quit", on_close)
     detect()
 
 def build_temperatures(parent_frame, signals):

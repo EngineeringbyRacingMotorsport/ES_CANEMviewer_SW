@@ -266,6 +266,8 @@ class CanBusReceiver(_Receiver):
         self._thread: threading.Thread | None = None
         self._stopping = threading.Event()
         self._first: float | None = None  # receiving thread
+        # Why receiving stopped, kept apart from last_error, which flush() also sets
+        self.bus_error: Exception | None = None
 
     @property
     def running(self) -> bool:
@@ -312,6 +314,7 @@ class CanBusReceiver(_Receiver):
                     self._receive(msg)
         except Exception as e:
             # e.g. the adapter was unplugged
+            self.bus_error = e
             self.last_error = e
 
     ## Called on the receiving thread for every frame
