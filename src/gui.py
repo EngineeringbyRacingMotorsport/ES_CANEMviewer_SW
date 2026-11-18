@@ -152,8 +152,10 @@ def clickable(widget: tk.Widget, command: Callable[[], None]) -> None:
 
 def format_value(signal: Signal, value: int | float) -> str:
     text = f"{value:g}"
-    if signal.Choices and value == int(value) and int(value) in signal.Choices:
-        text += f" ({signal.Choices[int(value)]})"
+    # Choices are keyed by raw value, but the value is stored decoded
+    choices = {raw * signal.Factor + signal.Offset: name for raw, name in (signal.Choices or {}).items()}
+    if value in choices:
+        text += f" ({choices[value]})"
     return text
 
 
@@ -170,6 +172,8 @@ def build_node_view(
     right = ttk.Frame(view)
     right.pack(side="left", fill="both", expand=True, padx=(10, 0))
 
+    # Messages without signals have nothing to show
+    messages = {message: signals_in_message for message, signals_in_message in messages.items() if signals_in_message}
     tables: dict[str, ttk.Treeview] = {}
     for message, signals_in_message in messages.items():
         box = ttk.Labelframe(left, text=message, padding=4)
@@ -222,7 +226,8 @@ def build_node_view(
             return
         message, signal = graphed[0]
         try:
-            limit = max(1, int(count.get()))
+            # Typed values aren't bound by the spinbox's range
+            limit = min(5000, max(1, int(count.get())))
         except ValueError:
             limit = 200
         samples = get_last_samples(message, signal, limit)
@@ -251,11 +256,14 @@ def build_node_view(
                     tree.item(signal, values=("—", unit, "—"), tags=("none",))
         draw()
 
-    first_message = next(iter(messages))
-    message, signal = selected or (first_message, messages[first_message][0])
-    tables[message].selection_set(signal)
-    tables[message].see(signal)
-    graphed[:] = [(message, signal)]
+    if selected is None and messages:
+        first_message = next(iter(messages))
+        selected = (first_message, messages[first_message][0])
+    if selected is not None:
+        message, signal = selected
+        tables[message].selection_set(signal)
+        tables[message].see(signal)
+        graphed[:] = [(message, signal)]
     refresh()
     return {"refresh": refresh, "close": view.destroy}
 

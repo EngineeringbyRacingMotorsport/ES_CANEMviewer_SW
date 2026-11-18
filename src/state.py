@@ -106,6 +106,8 @@ def get_state_at(
 def get_latest_times(message: Identifier) -> dict[str, int]:
     schema, _, conn = unwrap(get_all())
     keys = list(schema.Messages[message].Signals)
+    if not keys:
+        return {}
     table = quote_ident(message)
     ts = quote_ident(TIMESTAMP_COLUMN)
     columns = ", ".join(
@@ -118,6 +120,8 @@ def get_latest_times(message: Identifier) -> dict[str, int]:
 ## Time (ms) of the newest frame of any message, None before the first one
 def get_newest_time() -> int | None:
     schema, _, conn = unwrap(get_all())
+    if not schema.Messages:
+        return None
     ts = quote_ident(TIMESTAMP_COLUMN)
     columns = ", ".join(f"(SELECT MAX({ts}) FROM {quote_ident(m)})" for m in schema.Messages)
     return max((t for t in conn.execute(f"SELECT {columns}").fetchone() if t is not None), default=None)
