@@ -9,7 +9,6 @@ from .schema import TIMESTAMP_COLUMN, get_all, quote_ident
 from .utils import unwrap
 from can.typechecking import AutoDetectedConfig, Channel
 from cantools.database.can import Database, Message
-from cantools.database.namedsignalvalue import NamedSignalValue
 from cantools.typechecking import DecodeResultType
 from io import BufferedIOBase, RawIOBase
 from typing import *  # pyright: ignore[reportWildcardImportFromLibrary]
@@ -346,12 +345,7 @@ def _upload_packet(
     columns: list[str] = [TIMESTAMP_COLUMN]
     values: list[int | float] = [timestamp]
     for name, value in data.items():
-        if isinstance(value, NamedSignalValue):
-            # Store the physical value behind the choice's label
-            value = msg.get_signal_by_name(name).conversion.raw_to_scaled(
-                value.value, decode_choices=False
-            )
-        elif isinstance(value, str):
+        if isinstance(value, str):
             raise TypeError(f"Signal {name} of message {msg.name} has a string value")
         columns.append(name)
         values.append(value)
@@ -374,7 +368,8 @@ def _parse_message(
     except KeyError:
         return None
 
-    dec = msg.decode(data, allow_truncated=True)
+    # Physical values, not choice labels: the tables store numbers
+    dec = msg.decode(data, decode_choices=False, allow_truncated=True)
     return (msg, dec)
 
 

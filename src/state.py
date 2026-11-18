@@ -16,6 +16,26 @@ class Phase(Enum):
     R = 3
 
 
+PHASE_MESSAGE = "FrontECU_M2"
+PHASE_SIGNAL = "FpSTAphase"
+
+
+## Phase sent by the FrontECU, the latest one or the one at the given time.
+## None before the first frame, or for a value that isn't a known phase.
+def get_phase(timestamp: float | None = None) -> Phase | None:
+    _, _, conn = unwrap(get_all())
+    ts = quote_ident(TIMESTAMP_COLUMN)
+    where, params = (f"WHERE {ts} <= ?", (timestamp,)) if timestamp is not None else ("", ())
+    row = conn.execute(
+        f"SELECT {quote_ident(PHASE_SIGNAL)} FROM {quote_ident(PHASE_MESSAGE)} {where}"
+        f" ORDER BY {ts} DESC LIMIT 1",
+        params,
+    ).fetchone()
+    if row is None or row[0] not in Phase._value2member_map_:
+        return None
+    return Phase(row[0])
+
+
 ## Latest value of each signal of the message, with its state under the mode's
 ## limits. Signals without a value yet are left out.
 def get_latest_state(

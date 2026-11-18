@@ -111,6 +111,7 @@ BO_ 257 FrontECU_M2: 5 FrontECU
  SG_ FpINTr2d : 2|1@1+ (1,0) [0|1] ""  FrontECU
  SG_ FpINTmenu : 3|1@1+ (1,0) [0|1] ""  FrontECU
  SG_ FpDIGmicrosd : 4|1@1+ (1,0) [0|1] ""  FrontECU
+ SG_ FpSTAphase : 5|3@1+ (1,0) [0|7] ""  FrontECU
  SG_ FpSDCinertia : 8|1@1+ (1,0) [0|1] ""  FrontECU
  SG_ FpSDCbots : 9|1@1+ (1,0) [0|1] ""  FrontECU
  SG_ FpSDCcsdb : 10|1@1+ (1,0) [0|1] ""  FrontECU
@@ -185,6 +186,7 @@ CM_ SG_ 256 FpDIGRpot "Right throttle position";
 CM_ SG_ 256 FpDIGLpot "Left throttle position";
 CM_ SG_ 256 FpANLbrake "Front brake pressure";
 CM_ SG_ 257 FpDIGr2d "R2D status";
+CM_ SG_ 257 FpSTAphase "Vehicle phase: Idle, Precharge, TS active, Ready-to-drive";
 BA_DEF_ BO_  "VFrameFormat" ENUM  "StandardCAN","ExtendedCAN","reserved","reserved","reserved","reserved","reserved","reserved","reserved","reserved","reserved","reserved","reserved","reserved","StandardCAN_FD","ExtendedCAN_FD","J1939PGN";
 BA_DEF_ BO_  "SendMode" ENUM  "Cyclic","IfActive","NoMsgSendType";
 BA_DEF_ BO_  "VCAN_J1939_PGN" INT 0 262143;
@@ -217,4 +219,5 @@ BA_ "BusType" "J1939";
 BA_ "VFrameFormat" BO_ 288 0;
 BA_ "VFrameFormat" BO_ 2550588916 1;
 BA_ "VFrameFormat" BO_ 2566869221 1;
+VAL_ 257 FpSTAphase 0 "I" 1 "P" 2 "T" 3 "R" ;
 

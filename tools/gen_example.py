@@ -112,6 +112,8 @@ class Car:
                     "FpINTr2d": b(self.r2d),
                     "FpINTmenu": 0,
                     "FpDIGmicrosd": 1,
+                    # Phase.P/T/R; the simulated drive starts precharging, so never I
+                    "FpSTAphase": 3 if self.r2d else 2 if self.hv else 1,
                     "FpSDCinertia": 1,
                     "FpSDCbots": 1,
                     "FpSDCcsdb": 1,
