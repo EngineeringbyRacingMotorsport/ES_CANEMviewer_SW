@@ -80,7 +80,7 @@ def main() -> int:
             time.sleep(1)
             receiver.flush()
             show(receiver, args.message, args.mode and Phase[args.mode])
-        print(f"Receiving stopped: {receiver.last_error}", file=sys.stderr)
+        print(f"Receiving stopped: {receiver.bus_error}", file=sys.stderr)
     except KeyboardInterrupt:
         pass
     finally:

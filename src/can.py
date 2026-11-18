@@ -282,6 +282,7 @@ class CanBusReceiver(_Receiver):
         bus = python_can.Bus(**self.config)
         self._bus = bus
         self._first = None
+        self.bus_error = None
         self._stopping.clear()
         self._thread = threading.Thread(
             target=self._run, args=(bus,), name="CanBusReceiver", daemon=True
