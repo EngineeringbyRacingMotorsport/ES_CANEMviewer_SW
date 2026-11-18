@@ -4,15 +4,31 @@ from pathlib import Path
 import tkinter as tk
 import ttkbootstrap as ttk
 from .can import DRIVERS, CanBusReceiver, detect_channels, supported_interfaces
-from .schema import Schema, get_all, get_schema, new_connection, set_connection
-from .state import Phase, State, get_latest_state, get_phase
+from .schema import Schema, Signal, get_all, get_schema, new_connection, set_connection
+from .state import (
+    Phase,
+    State,
+    get_last_samples,
+    get_latest_state,
+    get_latest_times,
+    get_newest_time,
+    get_phase,
+)
 from .utils import unwrap
 from can.typechecking import AutoDetectedConfig
 from collections.abc import Callable
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from matplotlib.figure import Figure
 
 POLL_MS = 200
 STATE_COLOURS = {State.OK: "lightgreen", State.WARNING: "#FFE08A", State.CRITICAL: "#FF8A80"}
 NO_DATA_COLOUR = "#E0E0E0"
+PHASE_NAMES = {
+    Phase.I: "Repòs",
+    Phase.P: "Precàrrega",
+    Phase.T: "Alta tensió activa",
+    Phase.R: "Llest per conduir",
+}
 
 ICONS_DIR = Path(__file__).parent / "icons"
 SCHEMA_PATH = "EMXCAN.json"
@@ -38,7 +54,15 @@ def load_svg(name: str, width: int) -> tk.PhotoImage:
 
 def build_trafficlight(parent_frame, signals):
     """Crea els elements visuals del Traffic Light una sola vegada."""
-    lightframe = ttk.Frame(parent_frame, height=700, width=1300, borderwidth=2, relief="ridge")
+    schema = unwrap(get_schema())
+    # Every signal's state depends on the phase, so it's shown above both views
+    phase_label = ttk.Label(parent_frame, font=("TkDefaultFont", 11, "bold"), padding=(5, 2))
+    phase_label.pack(side="top", anchor="w")
+    grid_view = ttk.Frame(parent_frame)
+    grid_view.pack(fill="both", expand=True)
+    node_view: dict[str, Callable[[], None]] = {}  # "refresh" / "close" of the open node, if any
+
+    lightframe = ttk.Frame(grid_view, height=700, width=1300, borderwidth=2, relief="ridge")
     lightframe.pack(pady=5, padx=5, anchor="nw", side="left", expand=False)
 
     labels: dict[str, dict[str, ttk.Label]] = {}  # message -> signal -> label
@@ -52,39 +76,188 @@ def build_trafficlight(parent_frame, signals):
 
         board_label = ttk.Label(board_frame, text=board, width=board_column_width, font=("TkDefaultFont", 10, "bold"), anchor="nw",)
         board_label.grid(row=0, column=0, rowspan=max(len(messages), 1), pady=2, padx=2, sticky="nw",)
+        for widget in (board_frame, board_label):
+            clickable(widget, lambda board=board: open_node(board))
 
         for row, (message, signals_in_message) in enumerate(messages.items()):
             message_frame = ttk.Frame(board_frame, borderwidth=2, relief="ridge")
             message_frame.grid(row=row, column=1, pady=2, padx=2, sticky="ew")
 
-            ttk.Label(message_frame, text=message, width=message_column_width, anchor="w").grid(
-                row=0, column=0, pady=2, padx=2, sticky="w"
-            )
+            message_label = ttk.Label(message_frame, text=message, width=message_column_width, anchor="w")
+            message_label.grid(row=0, column=0, pady=2, padx=2, sticky="w")
+            for widget in (message_frame, message_label):
+                clickable(widget, lambda board=board: open_node(board))
             for column, signal in enumerate(signals_in_message, start=1):
                 signal_frame = ttk.Frame(message_frame, borderwidth=2, relief=None)
                 signal_frame.grid(row=0, column=column, pady=2, padx=2, sticky="w")
                 label = ttk.Label(signal_frame, text=signal, padding=(5,0))
                 label.pack(pady=0, padx=0, anchor="center")
                 labels.setdefault(message, {})[signal] = label
+                for widget in (signal_frame, label):
+                    clickable(widget, lambda board=board, message=message, signal=signal: open_node(board, (message, signal)))
 
     def refresh() -> None:
         """Colours each signal by its latest state in the current phase"""
-        phase = get_phase() or Phase.I
+        current = get_phase()
+        phase_label["text"] = f"Fase: {current.name} · {PHASE_NAMES[current]}" if current else "Fase: —"
+        phase = current or Phase.I
         for message, message_labels in labels.items():
             states = get_latest_state(phase, message)
             for signal, label in message_labels.items():
                 state = states.get(signal)
                 label.configure(background=STATE_COLOURS[state[1]] if state else NO_DATA_COLOUR)
+        if "refresh" in node_view:
+            node_view["refresh"]()
 
-    tsal_status = ttk.Frame(parent_frame, height=50, borderwidth=2, relief="ridge")
+    def open_node(node: str, selected: tuple[str, str] | None = None) -> None:
+        if "close" in node_view:
+            node_view["close"]()
+        grid_view.pack_forget()
+        node_view.update(build_node_view(parent_frame, schema, node, signals[node], selected))
+
+    def close_node() -> None:
+        if "close" in node_view:
+            node_view.pop("close")()
+            node_view.pop("refresh")
+            grid_view.pack(fill="both", expand=True)
+
+    # Clicking the "Traffic light" tab goes back to the grid
+    notebook = parent_frame.master
+
+    def on_tab_click(event: tk.Event) -> None:
+        try:
+            index = notebook.index(f"@{event.x},{event.y}")
+        except tk.TclError:
+            return  # not on a tab
+        if notebook.tabs()[index] == str(parent_frame):
+            close_node()
+
+    notebook.bind("<Button-1>", on_tab_click, add="+")
+
+    tsal_status = ttk.Frame(grid_view, height=50, borderwidth=2, relief="ridge")
     tsal_status.pack(pady=5, padx=5, anchor="nw", side="left", expand=True, fill="x")
     ttk.Label(tsal_status, text="TSAL LIGHT", font=("TkDefaultFont", 12, "bold"), background="#FFCCCB", anchor="center", padding=(0,5)).pack(side="top", expand=True, fill="both")
 
-    scs_signals = ttk.Frame(parent_frame, height=50, borderwidth=2, relief="ridge")
+    scs_signals = ttk.Frame(grid_view, height=50, borderwidth=2, relief="ridge")
     scs_signals.pack(pady=5, padx=5, anchor="w", side="bottom", expand=True, fill="x")
 
     refresh()
     return refresh
+
+
+def clickable(widget: tk.Widget, command: Callable[[], None]) -> None:
+    widget.configure(cursor="hand2")
+    widget.bind("<Button-1>", lambda _: command())
+
+
+def format_value(signal: Signal, value: int | float) -> str:
+    text = f"{value:g}"
+    if signal.Choices and value == int(value) and int(value) in signal.Choices:
+        text += f" ({signal.Choices[int(value)]})"
+    return text
+
+
+def build_node_view(
+    parent_frame, schema: Schema, node: str, messages: dict[str, list[str]], selected: tuple[str, str] | None
+) -> dict[str, Callable[[], None]]:
+    """Taules dels missatges d'un node a l'esquerra i gràfic del senyal triat a la dreta.
+    Returns its "refresh" and "close" functions."""
+    view = ttk.Frame(parent_frame)
+    view.pack(fill="both", expand=True, padx=5, pady=5)
+    ttk.Label(view, text=node, font=("TkDefaultFont", 12, "bold")).pack(anchor="w", pady=(0, 5))
+    left = ttk.Frame(view)
+    left.pack(side="left", fill="y", anchor="n")
+    right = ttk.Frame(view)
+    right.pack(side="left", fill="both", expand=True, padx=(10, 0))
+
+    tables: dict[str, ttk.Treeview] = {}
+    for message, signals_in_message in messages.items():
+        box = ttk.Labelframe(left, text=message, padding=4)
+        box.pack(fill="x", anchor="n", pady=3)
+        tree = ttk.Treeview(box, columns=("value", "unit", "age"), height=len(signals_in_message), selectmode="browse")
+        for column, text, width in (("#0", "Senyal", 170), ("value", "Valor", 120), ("unit", "Unitat", 60), ("age", "Fa (ms)", 70)):
+            tree.heading(column, text=text, anchor="w")
+            tree.column(column, width=width, stretch=False, anchor="w" if column == "#0" else "e")
+        tree.tag_configure("none", background=NO_DATA_COLOUR)
+        for state, colour in STATE_COLOURS.items():
+            tree.tag_configure(state.name, background=colour)
+        for signal in signals_in_message:
+            tree.insert("", "end", iid=signal, text=signal, values=("—", schema.Messages[message].Signals[signal].Unit, "—"), tags=("none",))
+        tree.pack(fill="x")
+        tree.bind("<<TreeviewSelect>>", lambda _, message=message: select(message))
+        tables[message] = tree
+
+    # Packed before the graph, which then takes the space that's left
+    controls = ttk.Frame(right)
+    controls.pack(side="bottom", anchor="w", pady=5)
+    # Small requested size: the graph grows to fill the window, never past it
+    figure = Figure(figsize=(4, 3), layout="constrained")
+    axes = figure.add_subplot()
+    (line,) = axes.plot([], [], marker=".", markersize=3, linewidth=1)
+    axes.set_xlabel("Temps (s)")
+    axes.grid(True, alpha=0.3)
+    canvas = FigureCanvasTkAgg(figure, master=right)
+    canvas.get_tk_widget().pack(fill="both", expand=True)
+    ttk.Label(controls, text="Últims").pack(side="left")
+    count = ttk.Spinbox(controls, from_=10, to=5000, increment=50, width=6, command=lambda: draw())
+    count.set(200)
+    count.pack(side="left", padx=5)
+    count.bind("<Return>", lambda _: draw())
+    ttk.Label(controls, text="valors").pack(side="left")
+
+    graphed: list[tuple[str, str]] = []  # the selected (message, signal)
+
+    def select(message: str) -> None:
+        tree = tables[message]
+        if not tree.selection():
+            return  # cleared because another table was selected
+        for other in tables.values():
+            if other is not tree:
+                other.selection_remove(other.selection())
+        graphed[:] = [(message, tree.selection()[0])]
+        draw()
+
+    def draw() -> None:
+        if not graphed:
+            return
+        message, signal = graphed[0]
+        try:
+            limit = max(1, int(count.get()))
+        except ValueError:
+            limit = 200
+        samples = get_last_samples(message, signal, limit)
+        line.set_data([t / 1000 for t, _ in samples], [v for _, v in samples])
+        unit = schema.Messages[message].Signals[signal].Unit
+        axes.set_title(signal)
+        axes.set_ylabel(unit)
+        # Both axes follow the samples shown
+        axes.relim()
+        axes.autoscale_view()
+        canvas.draw_idle()
+
+    def refresh() -> None:
+        phase = get_phase() or Phase.I
+        newest = get_newest_time()
+        for message, tree in tables.items():
+            signals = schema.Messages[message].Signals
+            states = get_latest_state(phase, message)
+            times = get_latest_times(message)
+            for signal in tree.get_children():
+                unit = signals[signal].Unit
+                if signal in states and newest is not None:
+                    value, state = states[signal]
+                    tree.item(signal, values=(format_value(signals[signal], value), unit, newest - times[signal]), tags=(state.name,))
+                else:
+                    tree.item(signal, values=("—", unit, "—"), tags=("none",))
+        draw()
+
+    first_message = next(iter(messages))
+    message, signal = selected or (first_message, messages[first_message][0])
+    tables[message].selection_set(signal)
+    tables[message].see(signal)
+    graphed[:] = [(message, signal)]
+    refresh()
+    return {"refresh": refresh, "close": view.destroy}
 
 def build_grafics(parent_frame, signals):
     
