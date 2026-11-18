@@ -1,8 +1,9 @@
-from .can import read_file
-from .schema import get_connection
-from .utils import unwrap
+from .gui import create_app
 
-conn = unwrap(get_connection("EMXCAN.json"))
-read_file("example.cpf")
-with open("example.sqlite", "wb") as f:
-    f.write(conn.serialize())
+
+def main():
+    create_app().mainloop()
+
+
+if __name__ == "__main__":
+    main()
