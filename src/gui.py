@@ -3,9 +3,20 @@ from pathlib import Path
 
 import tkinter as tk
 import ttkbootstrap as ttk
-from .json import parse_schema
+from .schema import Schema, get_schema
+from .utils import unwrap
 
 ICONS_DIR = Path(__file__).parent / "icons"
+SCHEMA_PATH = "EMXCAN.json"
+
+
+def signals_by_board(schema: Schema) -> dict[str, dict[str, list[str]]]:
+    """Signal names grouped by sending board, then by message"""
+    boards: dict[str, dict[str, list[str]]] = {}
+    for name, message in schema.Messages.items():
+        board = message.Senders[0] if message.Senders else "Other"
+        boards.setdefault(board, {})[name] = list(message.Signals)
+    return boards
 
 
 def load_svg(name: str, width: int) -> tk.PhotoImage:
@@ -103,7 +114,7 @@ def create_app():
     ttk.Style().configure("TButton", focusthickness=0)
 
     # Carrega de dades
-    dict_signals = parse_schema("EMXDATA.json").model_dump()
+    dict_signals = signals_by_board(unwrap(get_schema(SCHEMA_PATH)))
 
     # Estructura de navegació
     mainmenu = {
