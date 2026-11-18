@@ -265,6 +265,11 @@ def _create_connection(schema: Schema) -> sqlite3.Connection:
                     f"{quote_ident(signal_name)} {_column_type(signal)}{'' if nullable else ' NOT NULL'}"
                 )
             conn.execute(f"CREATE TABLE {quote_ident(name)} ({', '.join(columns)})")
+            # Latest-value lookups stay fast however long the recording gets
+            conn.execute(
+                f"CREATE INDEX {quote_ident(name + '_' + TIMESTAMP_COLUMN)}"
+                f" ON {quote_ident(name)} ({quote_ident(TIMESTAMP_COLUMN)})"
+            )
     except:
         conn.close()
         raise

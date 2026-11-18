@@ -5,10 +5,14 @@ import tkinter as tk
 import ttkbootstrap as ttk
 from .can import DRIVERS, CanBusReceiver, detect_channels, supported_interfaces
 from .schema import Schema, get_all, get_schema
+from .state import Phase, State, get_latest_state, get_phase
 from .utils import unwrap
 from can.typechecking import AutoDetectedConfig
+from collections.abc import Callable
 
 POLL_MS = 200
+STATE_COLOURS = {State.OK: "lightgreen", State.WARNING: "#FFE08A", State.CRITICAL: "#FF8A80"}
+NO_DATA_COLOUR = "#E0E0E0"
 
 ICONS_DIR = Path(__file__).parent / "icons"
 SCHEMA_PATH = "EMXCAN.json"
@@ -37,6 +41,7 @@ def build_trafficlight(parent_frame, signals):
     lightframe = ttk.Frame(parent_frame, height=700, width=1300, borderwidth=2, relief="ridge")
     lightframe.pack(pady=5, padx=5, anchor="nw", side="left", expand=False)
 
+    labels: dict[str, dict[str, ttk.Label]] = {}  # message -> signal -> label
     board_column_width = max((len(str(board)) for board in signals), default=8) + 1
     message_column_width = max((len(str(message)) for messages in signals.values() for message in messages), default=1) + 1
 
@@ -50,22 +55,43 @@ def build_trafficlight(parent_frame, signals):
 
         for row, (message, signals_in_message) in enumerate(messages.items()):
             message_frame = ttk.Frame(board_frame, borderwidth=2, relief="ridge")
-            message_frame.grid(row=row, column=1, pady=2, padx=2, sticky="ew")
+            message_frame.grid(row=row, column=1, pady=1, padx=2, sticky="ew")
 
             ttk.Label(message_frame, text=message, width=message_column_width, anchor="w").grid(
                 row=0, column=0, pady=2, padx=2, sticky="w"
             )
             for column, signal in enumerate(signals_in_message, start=1):
-                signal_frame = ttk.Frame(message_frame, borderwidth=2, relief=None)
-                signal_frame.grid(row=0, column=column, pady=2, padx=2, sticky="w")
-                ttk.Label(signal_frame, text=signal, padding=(5,0), background="lightgreen" ).pack(pady=0, padx=0, anchor="center")
-            
+                signal_frame = ttk.Frame(message_frame, borderwidth=0, relief=None)
+                signal_frame.grid(row=0, column=column, pady=0, padx=2, sticky="w")
+                # Two lines (name, value) in a smaller font, so every board fits the window;
+                # a negative width is a minimum, so values changing don't shift the row much
+                label = ttk.Label(signal_frame, padding=(5,0), justify="center", anchor="center", width=-6, font=("TkDefaultFont", 9))
+                label.pack(pady=0, padx=0, anchor="center")
+                labels.setdefault(message, {})[signal] = label
+
+    def refresh() -> None:
+        """Latest value of each signal, coloured by its state in the current phase"""
+        schema = unwrap(get_schema())
+        phase = get_phase() or Phase.I
+        for message, message_labels in labels.items():
+            states = get_latest_state(phase, message)
+            for signal, label in message_labels.items():
+                if signal in states:
+                    value, state = states[signal]
+                    unit = schema.Messages[message].Signals[signal].Unit
+                    label.configure(text=f"{signal}\n{round(value, 2)} {unit}".rstrip(), background=STATE_COLOURS[state])
+                else:
+                    label.configure(text=f"{signal}\n—", background=NO_DATA_COLOUR)
+
     tsal_status = ttk.Frame(parent_frame, height=50, borderwidth=2, relief="ridge")
     tsal_status.pack(pady=5, padx=5, anchor="nw", side="left", expand=True, fill="x")
     ttk.Label(tsal_status, text="TSAL LIGHT", font=("TkDefaultFont", 12, "bold"), background="#FFCCCB", anchor="center", padding=(0,5)).pack(side="top", expand=True, fill="both")
 
     scs_signals = ttk.Frame(parent_frame, height=50, borderwidth=2, relief="ridge")
     scs_signals.pack(pady=5, padx=5, anchor="w", side="bottom", expand=True, fill="x")
+
+    refresh()
+    return refresh
 
 def build_grafics(parent_frame, signals):
     
@@ -93,8 +119,9 @@ def build_grafics(parent_frame, signals):
     icon_2x2_button = ttk.Button(config_frame, image=icon_2x2, padding=(0,0), cursor="hand2")
     icon_2x2_button.pack(padx=5, pady=5, side="left")
     icon_2x2_button.image = icon_2x2
-def build_connect(parent_frame):
-    """Connexió en directe a un adaptador CAN; les trames es desen a la base de dades."""
+def build_connect(parent_frame, on_data: Callable[[], None]):
+    """Connexió en directe a un adaptador CAN; les trames es desen a la base de dades
+    i on_data() actualitza el que es mostra."""
     frame = ttk.Frame(parent_frame, padding=10, borderwidth=2, relief="ridge")
     frame.pack(pady=20, padx=20, anchor="nw")
 
@@ -192,6 +219,7 @@ def build_connect(parent_frame):
             # e.g. the adapter was unplugged; keep what was received
             message = message or str(e)
         receiver.flush()
+        on_data()
         status["text"] = f"Desconnectat · {counts(receiver)}"
         error["text"] = message
         receiver = None
@@ -203,6 +231,7 @@ def build_connect(parent_frame):
         if receiver is None:
             return
         receiver.flush()
+        on_data()
         status["text"] = f"Connectat · {counts(receiver)}"
         if receiver.last_error is not None:
             error["text"] = f"Últim error: {receiver.last_error}"
@@ -264,11 +293,12 @@ def create_app():
 
             # Assignem el contingut específic directament en crear la pestanya
             if sub_title == "Traffic light":
-                build_trafficlight(sub_frame, dict_signals)
+                refresh_trafficlight = build_trafficlight(sub_frame, dict_signals)
             if sub_title == "Gràfics":
                 build_grafics(sub_frame, dict_signals)
             if sub_title == "Connectar":
-                build_connect(sub_frame)
+                # "Visualitzar" is built first, so the Traffic light already exists
+                build_connect(sub_frame, refresh_trafficlight)
             if sub_title == "Temperatures":
                 build_temperatures(sub_frame, dict_signals)
     return root
