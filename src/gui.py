@@ -151,7 +151,8 @@ def clickable(widget: tk.Widget, command: Callable[[], None]) -> None:
 
 
 def format_value(signal: Signal, value: int | float) -> str:
-    text = f"{value:g}"
+    # Integers in full; floats without the noise of their binary representation
+    text = str(value) if isinstance(value, int) else f"{value:.10g}"
     # Choices are keyed by raw value, but the value is stored decoded
     choices = {raw * signal.Factor + signal.Offset: name for raw, name in (signal.Choices or {}).items()}
     if value in choices:
