@@ -1,5 +1,6 @@
 from .schema import TIMESTAMP_COLUMN, Identifier, LimitSet, get_all
 from .utils import quote_ident, unwrap
+from collections.abc import Iterable
 from enum import Enum
 
 
@@ -53,10 +54,10 @@ def get_latest_state(
     # Each signal is looked up on its own, since multiplexed signals are only
     # present in some of the rows
     table = quote_ident(message)
-    ts = quote_ident(TIMESTAMP_COLUMN)
+    order = _latest_first(keys)
     columns = ", ".join(
         f"(SELECT {quote_ident(k)} FROM {table} WHERE {quote_ident(k)} IS NOT NULL"
-        f" ORDER BY {ts} DESC LIMIT 1)"
+        f" ORDER BY {order} LIMIT 1)"
         for k in keys
     )
     row = conn.execute(f"SELECT {columns}").fetchone()
@@ -68,34 +69,46 @@ def get_latest_state(
     return res
 
 
-## Value of each signal of the message at the given time, linearly interpolated
-## between the samples around it, with its state under the mode's limits. After
-## the last sample the last value is kept; signals without a sample at or before
-## the time are left out.
+## Value of each signal of the message at the given time (in ms, as stored),
+## taken from its latest sample at or before it, with its state under the mode's
+## limits. Signals without a sample at or before the time are left out.
 def get_state_at(
     phase: Phase, message: Identifier, timestamp: float
-) -> dict[str, tuple[float, State]]:
+) -> dict[str, tuple[int | float, State]]:
     schema, _, conn = unwrap(get_all())
+    signals = schema.Messages[message].Signals
     table = quote_ident(message)
     ts = quote_ident(TIMESTAMP_COLUMN)
+    order = _latest_first(signals)
 
-    res: dict[str, tuple[float, State]] = {}
-    for key, signal in schema.Messages[message].Signals.items():
+    res: dict[str, tuple[int | float, State]] = {}
+    for key, signal in signals.items():
         # Looked up per signal, since multiplexed signals are only present in
         # some of the rows
         column = quote_ident(key)
-        value = conn.execute(
+        row = conn.execute(
             f"SELECT {column} FROM {table} WHERE {column} IS NOT NULL AND {ts} <= ?"
-            f" ORDER BY {ts} DESC LIMIT 1",
+            f" ORDER BY {order} LIMIT 1",
             (timestamp,),
         ).fetchone()
 
-        if value is None:
+        if row is None:
             continue
+        value = row[0]
 
         limit = getattr(signal.Viewer.Limits, phase.name.lower())
         res[key] = (value, _state_of(value, limit))
     return res
+
+
+## Newest sample first. Timestamps are rounded to ms, so samples can share one;
+## rows are stored as they arrive, so the row id breaks the tie. A signal may
+## take one of the row id's names, in which case another one is used.
+def _latest_first(signals: Iterable[str]) -> str:
+    ts = quote_ident(TIMESTAMP_COLUMN)
+    taken = {name.lower() for name in signals}
+    rowid = next((n for n in ("rowid", "_rowid_", "oid") if n not in taken), None)
+    return f"{ts} DESC" if rowid is None else f"{ts} DESC, {rowid} DESC"
 
 
 def _state_of(value: int | float, limit: LimitSet | None) -> State:
