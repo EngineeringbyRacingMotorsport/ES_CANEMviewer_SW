@@ -1,5 +1,5 @@
 import sqlite3
-from .utils import quote_ident, read_text_file
+from .utils import quote_ident, read_text_file, unwrap
 from cantools.database import load_string
 from cantools.database.can import Database, Node
 from cantools.database.can import Message as CanMessage
@@ -221,6 +221,20 @@ def get_all(
         return None
 
 
+## Empty database for the loaded schema, to be put in use with set_connection()
+def new_connection() -> sqlite3.Connection:
+    return _create_connection(unwrap(_schema)[1])
+
+
+## Use the given database for the loaded schema, closing the previous one
+def set_connection(conn: sqlite3.Connection) -> None:
+    global _schema
+    path, schema, can, old = unwrap(_schema)
+    _schema = (path, schema, can, conn)
+    if old is not conn:
+        old.close()
+
+
 def get_schema(path: str | None = None) -> Schema | None:
     schema = get_all(path)
     return schema[0] if schema is not None else None
@@ -265,6 +279,20 @@ def _create_connection(schema: Schema) -> sqlite3.Connection:
                     f"{quote_ident(signal_name)} {_column_type(signal)}{'' if nullable else ' NOT NULL'}"
                 )
             conn.execute(f"CREATE TABLE {quote_ident(name)} ({', '.join(columns)})")
+            # Latest-value lookups stay fast however long the recording gets.
+            # Multiplexed signals get their own, since they may be rare or never
+            # sent. The ':' keeps index names apart from message names.
+            conn.execute(
+                f"CREATE INDEX {quote_ident(name + ':' + TIMESTAMP_COLUMN)}"
+                f" ON {quote_ident(name)} ({quote_ident(TIMESTAMP_COLUMN)})"
+            )
+            for signal_name, signal in message.Signals.items():
+                if signal.MultiplexerIds is not None:
+                    conn.execute(
+                        f"CREATE INDEX {quote_ident(name + ':' + signal_name)}"
+                        f" ON {quote_ident(name)} ({quote_ident(TIMESTAMP_COLUMN)})"
+                        f" WHERE {quote_ident(signal_name)} IS NOT NULL"
+                    )
     except:
         conn.close()
         raise

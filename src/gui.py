@@ -3,8 +3,16 @@ from pathlib import Path
 
 import tkinter as tk
 import ttkbootstrap as ttk
-from .schema import Schema, get_schema
+from .can import DRIVERS, CanBusReceiver, detect_channels, supported_interfaces
+from .schema import Schema, get_all, get_schema, new_connection, set_connection
+from .state import Phase, State, get_latest_state, get_phase
 from .utils import unwrap
+from can.typechecking import AutoDetectedConfig
+from collections.abc import Callable
+
+POLL_MS = 200
+STATE_COLOURS = {State.OK: "lightgreen", State.WARNING: "#FFE08A", State.CRITICAL: "#FF8A80"}
+NO_DATA_COLOUR = "#E0E0E0"
 
 ICONS_DIR = Path(__file__).parent / "icons"
 SCHEMA_PATH = "EMXCAN.json"
@@ -33,6 +41,7 @@ def build_trafficlight(parent_frame, signals):
     lightframe = ttk.Frame(parent_frame, height=700, width=1300, borderwidth=2, relief="ridge")
     lightframe.pack(pady=5, padx=5, anchor="nw", side="left", expand=False)
 
+    labels: dict[str, dict[str, ttk.Label]] = {}  # message -> signal -> label
     board_column_width = max((len(str(board)) for board in signals), default=8) + 1
     message_column_width = max((len(str(message)) for messages in signals.values() for message in messages), default=1) + 1
 
@@ -54,14 +63,28 @@ def build_trafficlight(parent_frame, signals):
             for column, signal in enumerate(signals_in_message, start=1):
                 signal_frame = ttk.Frame(message_frame, borderwidth=2, relief=None)
                 signal_frame.grid(row=0, column=column, pady=2, padx=2, sticky="w")
-                ttk.Label(signal_frame, text=signal, padding=(5,0), background="lightgreen" ).pack(pady=0, padx=0, anchor="center")
-            
+                label = ttk.Label(signal_frame, text=signal, padding=(5,0))
+                label.pack(pady=0, padx=0, anchor="center")
+                labels.setdefault(message, {})[signal] = label
+
+    def refresh() -> None:
+        """Colours each signal by its latest state in the current phase"""
+        phase = get_phase() or Phase.I
+        for message, message_labels in labels.items():
+            states = get_latest_state(phase, message)
+            for signal, label in message_labels.items():
+                state = states.get(signal)
+                label.configure(background=STATE_COLOURS[state[1]] if state else NO_DATA_COLOUR)
+
     tsal_status = ttk.Frame(parent_frame, height=50, borderwidth=2, relief="ridge")
     tsal_status.pack(pady=5, padx=5, anchor="nw", side="left", expand=True, fill="x")
     ttk.Label(tsal_status, text="TSAL LIGHT", font=("TkDefaultFont", 12, "bold"), background="#FFCCCB", anchor="center", padding=(0,5)).pack(side="top", expand=True, fill="both")
 
     scs_signals = ttk.Frame(parent_frame, height=50, borderwidth=2, relief="ridge")
     scs_signals.pack(pady=5, padx=5, anchor="w", side="bottom", expand=True, fill="x")
+
+    refresh()
+    return refresh
 
 def build_grafics(parent_frame, signals):
     
@@ -89,13 +112,171 @@ def build_grafics(parent_frame, signals):
     icon_2x2_button = ttk.Button(config_frame, image=icon_2x2, padding=(0,0), cursor="hand2")
     icon_2x2_button.pack(padx=5, pady=5, side="left")
     icon_2x2_button.image = icon_2x2
-def build_connect(parent_frame, signals):
-    """Crea els elements visuals del Connect una sola vegada."""
-    connectframe = ttk.Frame(parent_frame, padding=10, borderwidth=2, relief="ridge")
-    connectframe.pack(pady=20)
+def build_connect(parent_frame, on_data: Callable[[], None]):
+    """Connexió en directe a un adaptador CAN; les trames es desen a la base de dades
+    i on_data() actualitza el que es mostra."""
+    frame = ttk.Frame(parent_frame, padding=10, borderwidth=2, relief="ridge")
+    frame.pack(pady=20, padx=20, anchor="nw")
 
-    for signal in signals:
-        ttk.Label(connectframe, text=signal).pack()
+    channels: list[AutoDetectedConfig] = []
+    receiver: CanBusReceiver | None = None
+    job: str | None = None  # pending poll() timer
+
+    ttk.Label(frame, text="Adaptador:").grid(row=0, column=0, sticky="w", pady=4)
+    adapter = ttk.Combobox(frame, state="readonly", width=30)
+    adapter.grid(row=0, column=1, sticky="w", pady=4)
+    detect_button = ttk.Button(frame, text="⟳ Detectar", cursor="hand2")
+    detect_button.grid(row=0, column=2, sticky="w", padx=5)
+
+    ttk.Label(frame, text="Bitrate:").grid(row=1, column=0, sticky="w", pady=4)
+    bitrate_row = ttk.Frame(frame)
+    bitrate_row.grid(row=1, column=1, columnspan=2, sticky="w", pady=4)
+    bitrate = ttk.Entry(bitrate_row, width=12)
+    bitrate.pack(side="left")
+    ttk.Label(bitrate_row, text="buit = la que ja té l'adaptador (PCAN: 500000)").pack(side="left", padx=5)
+
+    buttons = ttk.Frame(frame)
+    buttons.grid(row=2, column=0, columnspan=3, sticky="w", pady=8)
+    connect_button = ttk.Button(buttons, text="Connectar", cursor="hand2")
+    connect_button.pack(side="left")
+    disconnect_button = ttk.Button(buttons, text="Desconnectar", cursor="hand2", state="disabled")
+    disconnect_button.pack(side="left", padx=5)
+
+    status = ttk.Label(frame, text="Desconnectat")
+    status.grid(row=3, column=0, columnspan=3, sticky="w")
+    error = ttk.Label(frame, text="", bootstyle="danger", wraplength=600)
+    error.grid(row=4, column=0, columnspan=3, sticky="w")
+
+    def counts(r: CanBusReceiver) -> str:
+        return f"{r.received} trames desades · {r.dropped} descartades"
+
+    def set_connected(connected: bool) -> None:
+        idle = "disabled" if connected else "normal"
+        adapter.configure(state="disabled" if connected else "readonly")
+        for widget in (bitrate, detect_button, connect_button):
+            widget.configure(state=idle)
+        disconnect_button.configure(state="normal" if connected else "disabled")
+
+    def detect() -> None:
+        nonlocal channels
+        failure: Exception | None = None
+        try:
+            channels = detect_channels()
+        except Exception as e:
+            channels = []
+            failure = e
+        adapter["values"] = [
+            f"{c['interface']} · {c['channel']}" + (f" · {c['serial']}" if "serial" in c else "")
+            for c in channels
+        ]
+        if channels:
+            adapter.current(0)
+            error["text"] = ""
+        else:
+            adapter.set("")
+            error["text"] = (
+                f"No s'han pogut detectar els adaptadors: {failure}"
+                if failure is not None
+                else f"No s'ha trobat cap adaptador ({', '.join(supported_interfaces())})"
+            )
+
+    def connect() -> None:
+        nonlocal receiver
+        text = bitrate.get().strip()
+        if adapter.current() < 0:
+            error["text"] = "Tria un adaptador"
+            return
+        if text and not (text.isdecimal() and int(text) > 0):
+            error["text"] = "El bitrate ha de ser un nombre enter positiu, p. ex. 500000"
+            return
+
+        config = channels[adapter.current()]
+        interface, channel = config["interface"], config["channel"]
+        if interface == "pcan" and text:
+            # python-can silently opens PCAN at 500000 for any other bitrate
+            from can.interfaces.pcan.basic import PCAN_BITRATES
+
+            if int(text) not in PCAN_BITRATES:
+                error["text"] = f"PCAN només admet aquests bitrates: {', '.join(map(str, sorted(PCAN_BITRATES)))}"
+                return
+        # Vector channel numbers repeat on each device, so open it on the detected
+        # one; by serial, which stays the same if the adapter is plugged in again
+        device = {"serial": config["serial"]} if "serial" in config else {}
+        # Empty database: timestamps restart at 0, so old rows would look newer.
+        # The previous one is only replaced once the adapter opens.
+        _, can, _ = unwrap(get_all())
+        conn = new_connection()
+        r = CanBusReceiver(can, conn, interface, channel, int(text) if text else None, **device)
+        try:
+            r.start()
+        except Exception as e:
+            conn.close()
+            hint = f"\nCal: {DRIVERS[interface]}" if interface in DRIVERS else ""
+            error["text"] = f"No s'ha pogut obrir {interface} canal {channel}: {e}{hint}"
+            return
+
+        set_connection(conn)
+        receiver = r
+        error["text"] = ""
+        set_connected(True)
+        poll()
+
+    def disconnect(message: str = "") -> None:
+        nonlocal receiver, job
+        if job is not None:
+            frame.after_cancel(job)
+            job = None
+        if receiver is None:
+            return
+        r, receiver = receiver, None
+        set_connected(False)
+        try:
+            r.stop()
+        except Exception as e:
+            # e.g. the adapter was unplugged; keep what was received
+            message = message or str(e)
+        try:
+            while r.pending:
+                r.flush()
+            on_data()
+        finally:
+            status["text"] = f"Desconnectat · {counts(r)}"
+            error["text"] = message
+
+    def poll() -> None:
+        nonlocal job
+        job = None
+        if receiver is None:
+            return
+        try:
+            receiver.flush()
+            on_data()
+        except Exception as e:
+            # Stop rather than keep receiving with nothing storing the frames
+            disconnect(f"Error: {e}")
+            return
+        status["text"] = f"Connectat · {counts(receiver)}"
+        if receiver.last_error is not None:
+            error["text"] = f"Últim error: {receiver.last_error}"
+        if receiver.running:
+            job = frame.after(POLL_MS, poll)
+        else:
+            disconnect(f"Adaptador perdut: {receiver.bus_error}")
+
+    def on_close() -> None:
+        try:
+            disconnect()
+        finally:
+            root.destroy()
+
+    detect_button.configure(command=detect)
+    connect_button.configure(command=connect)
+    disconnect_button.configure(command=disconnect)
+    root = frame.winfo_toplevel()
+    root.protocol("WM_DELETE_WINDOW", on_close)
+    # macOS's Quit (Cmd+Q) doesn't go through WM_DELETE_WINDOW
+    root.createcommand("::tk::mac::Quit", on_close)
+    detect()
 
 def build_temperatures(parent_frame, signals):
     """Crea els elements visuals del Temperatures una sola vegada."""
@@ -139,11 +320,12 @@ def create_app():
 
             # Assignem el contingut específic directament en crear la pestanya
             if sub_title == "Traffic light":
-                build_trafficlight(sub_frame, dict_signals)
+                refresh_trafficlight = build_trafficlight(sub_frame, dict_signals)
             if sub_title == "Gràfics":
                 build_grafics(sub_frame, dict_signals)
             if sub_title == "Connectar":
-                build_connect(sub_frame, dict_signals)
+                # "Visualitzar" is built first, so the Traffic light already exists
+                build_connect(sub_frame, refresh_trafficlight)
             if sub_title == "Temperatures":
                 build_temperatures(sub_frame, dict_signals)
     return root

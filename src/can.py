@@ -207,6 +207,14 @@ class _DatagramProtocol(asyncio.DatagramProtocol):
             self.closed.set_result(None)
 
 
+# What each interface needs installed, for when it can't be opened
+DRIVERS: Final[dict[str, str]] = {
+    "vector": "the Vector XL Driver Library (and the channel is assigned in Vector Hardware Config)",
+    "pcan": "PCAN-Basic (Windows) or PCBUSB from mac-can.com (macOS)",
+    "socketcan": "the interface is up (sudo ip link set can0 up type can bitrate 500000)",
+}
+
+
 ## python-can interfaces of the adapters we use that work on this OS, most
 ## preferred first. The Vector driver is Windows only, and PCAN-USB needs
 ## PCAN-Basic on Windows and PCBUSB on macOS. On Linux both PCAN-USB and the
@@ -258,6 +266,8 @@ class CanBusReceiver(_Receiver):
         self._thread: threading.Thread | None = None
         self._stopping = threading.Event()
         self._first: float | None = None  # receiving thread
+        # Why receiving stopped, kept apart from last_error, which flush() also sets
+        self.bus_error: Exception | None = None
 
     @property
     def running(self) -> bool:
@@ -272,6 +282,7 @@ class CanBusReceiver(_Receiver):
         bus = python_can.Bus(**self.config)
         self._bus = bus
         self._first = None
+        self.bus_error = None
         self._stopping.clear()
         self._thread = threading.Thread(
             target=self._run, args=(bus,), name="CanBusReceiver", daemon=True
@@ -304,6 +315,7 @@ class CanBusReceiver(_Receiver):
                     self._receive(msg)
         except Exception as e:
             # e.g. the adapter was unplugged
+            self.bus_error = e
             self.last_error = e
 
     ## Called on the receiving thread for every frame
