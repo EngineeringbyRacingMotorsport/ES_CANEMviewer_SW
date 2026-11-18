@@ -48,8 +48,9 @@ Error: —
 - Read-only dropdown filled by `detect_channels()`; ⟳ detects again.
 - Bitrate: empty means none; anything that isn't a positive whole number is an
   error.
-- Connectar: fresh database via `get_all(SCHEMA_PATH)`, start a
-  `CanBusReceiver`; on failure show the error and the `DRIVERS` hint.
+- Connectar: fresh database for the loaded schema (`new_connection()`), start a
+  `CanBusReceiver`, and only then replace the old database (`set_connection()`);
+  on failure keep the old one and show the error and the `DRIVERS` hint.
 - Timer: flush, update the status; if the receiver stops, show "Adaptador
   perdut" with its error and go back to disconnected.
 - Desconnectar: stop, then flush the rest; the data stays in the database.

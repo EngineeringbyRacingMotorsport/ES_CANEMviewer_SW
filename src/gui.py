@@ -4,7 +4,7 @@ from pathlib import Path
 import tkinter as tk
 import ttkbootstrap as ttk
 from .can import DRIVERS, CanBusReceiver, detect_channels, supported_interfaces
-from .schema import Schema, get_all, get_schema
+from .schema import Schema, get_all, get_schema, new_connection, set_connection
 from .state import Phase, State, get_latest_state, get_phase
 from .utils import unwrap
 from can.typechecking import AutoDetectedConfig
@@ -133,7 +133,7 @@ def build_connect(parent_frame, on_data: Callable[[], None]):
     bitrate_row.grid(row=1, column=1, columnspan=2, sticky="w", pady=4)
     bitrate = ttk.Entry(bitrate_row, width=12)
     bitrate.pack(side="left")
-    ttk.Label(bitrate_row, text="buit = la que ja té l'adaptador").pack(side="left", padx=5)
+    ttk.Label(bitrate_row, text="buit = la que ja té l'adaptador (PCAN: 500000)").pack(side="left", padx=5)
 
     buttons = ttk.Frame(frame)
     buttons.grid(row=2, column=0, columnspan=3, sticky="w", pady=8)
@@ -159,18 +159,26 @@ def build_connect(parent_frame, on_data: Callable[[], None]):
 
     def detect() -> None:
         nonlocal channels
+        failure: Exception | None = None
         try:
             channels = detect_channels()
         except Exception as e:
             channels = []
-            error["text"] = f"No s'han pogut detectar els adaptadors: {e}"
-        adapter["values"] = [f"{c['interface']} · {c['channel']}" for c in channels]
+            failure = e
+        adapter["values"] = [
+            f"{c['interface']} · {c['channel']}" + (f" · {c['serial']}" if "serial" in c else "")
+            for c in channels
+        ]
         if channels:
             adapter.current(0)
             error["text"] = ""
         else:
             adapter.set("")
-            error["text"] = error["text"] or f"No s'ha trobat cap adaptador ({', '.join(supported_interfaces())})"
+            error["text"] = (
+                f"No s'han pogut detectar els adaptadors: {failure}"
+                if failure is not None
+                else f"No s'ha trobat cap adaptador ({', '.join(supported_interfaces())})"
+            )
 
     def connect() -> None:
         nonlocal receiver
@@ -178,22 +186,28 @@ def build_connect(parent_frame, on_data: Callable[[], None]):
         if adapter.current() < 0:
             error["text"] = "Tria un adaptador"
             return
-        if text and not (text.isdigit() and int(text) > 0):
+        if text and not (text.isdecimal() and int(text) > 0):
             error["text"] = "El bitrate ha de ser un nombre enter positiu, p. ex. 500000"
             return
 
         config = channels[adapter.current()]
         interface, channel = config["interface"], config["channel"]
-        # Empty database: timestamps restart at 0, so old rows would look newer
-        _, can, conn = unwrap(get_all(SCHEMA_PATH))
-        r = CanBusReceiver(can, conn, interface, channel, int(text) if text else None)
+        # Vector channel numbers repeat on each device, so open the detected one
+        device = {k: config[k] for k in ("serial", "channel_index") if k in config}
+        # Empty database: timestamps restart at 0, so old rows would look newer.
+        # The previous one is only replaced once the adapter opens.
+        _, can, _ = unwrap(get_all())
+        conn = new_connection()
+        r = CanBusReceiver(can, conn, interface, channel, int(text) if text else None, **device)
         try:
             r.start()
         except Exception as e:
+            conn.close()
             hint = f"\nCal: {DRIVERS[interface]}" if interface in DRIVERS else ""
             error["text"] = f"No s'ha pogut obrir {interface} canal {channel}: {e}{hint}"
             return
 
+        set_connection(conn)
         receiver = r
         error["text"] = ""
         set_connected(True)
@@ -211,7 +225,8 @@ def build_connect(parent_frame, on_data: Callable[[], None]):
         except Exception as e:
             # e.g. the adapter was unplugged; keep what was received
             message = message or str(e)
-        receiver.flush()
+        while receiver.pending:
+            receiver.flush()
         on_data()
         status["text"] = f"Desconnectat · {counts(receiver)}"
         error["text"] = message
@@ -234,8 +249,10 @@ def build_connect(parent_frame, on_data: Callable[[], None]):
             disconnect(f"Adaptador perdut: {receiver.last_error}")
 
     def on_close() -> None:
-        disconnect()
-        root.destroy()
+        try:
+            disconnect()
+        finally:
+            root.destroy()
 
     detect_button.configure(command=detect)
     connect_button.configure(command=connect)
