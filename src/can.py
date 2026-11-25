@@ -17,20 +17,66 @@ MIN_PACKET_SIZE: Final[int] = 3
 MAX_PACKET_SIZE: Final[int] = 19
 
 
-def read_file(path: str):
-    _, can, conn = unwrap(get_all())
-    with open(path, "rb") as f:
+## A logger clock going back further than this (ms) restarted, e.g. after a reset
+RESTART_MS: Final[int] = 1000
+## Where a restarted piece goes after the previous one (ms); the real gap is unknown
+RESTART_GAP_MS: Final[int] = 10
+
+
+class Loaded(NamedTuple):
+    """What reading a recording found"""
+
+    frames: int  # frames stored
+    skipped: int  # frames of unknown messages, or that couldn't be decoded
+    restarts: list[int]  # stored times (ms) where the logger's clock restarted
+    stopped: str | None  # why reading stopped before the end of the file
+
+
+## Read a packet file (as the datalogger writes it) into `conn` (by default the
+## database in use), with its timestamps in ms since the first frame. Frames
+## that can't be decoded are skipped; reading stops, keeping what came before,
+## at the first packet that can't be read, e.g. one cut off by a power loss. A
+## clock that restarts is put after the time logged before it, so the file has
+## one timeline.
+def read_file(path: str, conn: sqlite3.Connection | None = None) -> Loaded:
+    _, can, current = unwrap(get_all())
+    conn = conn or current
+    frames = skipped = 0
+    restarts: list[int] = []
+    stopped: str | None = None
+    offset: int | None = None  # added to the logger's timestamps
+    newest = 0  # newest time stored
+    with open(path, "rb") as f, conn:
         while True:
-            next = _read_packet(f)
-            if next is None:
+            at = f.tell()
+            try:
+                packet = _read_packet(f)
+            except Exception as e:
+                stopped = f"byte {at}: {e}"
                 break
-            _upload_packet(can, conn, next)
+            if packet is None:
+                break
+            frame_id, ms, data = packet
+            if offset is None:
+                offset = -ms
+            elif ms + offset < newest - RESTART_MS:
+                offset = newest + RESTART_GAP_MS - ms
+                restarts.append(newest + RESTART_GAP_MS)
+            newest = max(newest, ms + offset)
+            if _store(can, conn, (frame_id, ms + offset, data)):
+                frames += 1
+            else:
+                skipped += 1
+    return Loaded(frames, skipped, restarts, stopped)
 
 
 ## Read a log recorded by another tool (CANalyzer .blf/.asc, PCAN-View .trc,
-## candump .log, ...), with its timestamps in ms since the first frame
-def read_log(path: str):
-    _, can, conn = unwrap(get_all())
+## candump .log, ...) into `conn` (by default the database in use), with its
+## timestamps in ms since the first frame
+def read_log(path: str, conn: sqlite3.Connection | None = None) -> Loaded:
+    _, can, current = unwrap(get_all())
+    conn = conn or current
+    frames = skipped = 0
     first: float | None = None
     with python_can.LogReader(path) as reader, conn:
         for msg in reader:
@@ -44,15 +90,27 @@ def read_log(path: str):
                 _to_ms(msg.timestamp - first),
                 bytes(msg.data),
             )
-            _upload_packet(can, conn, packet)
+            if _store(can, conn, packet):
+                frames += 1
+            else:
+                skipped += 1
+    return Loaded(frames, skipped, [], None)
 
 
 ## Read a recording, picking the reader from its extension
-def read_recording(path: str):
+def read_recording(path: str, conn: sqlite3.Connection | None = None) -> Loaded:
     if os.path.splitext(path)[1].lower() == ".cpf":
-        read_file(path)
-    else:
-        read_log(path)
+        return read_file(path, conn)
+    return read_log(path, conn)
+
+
+## Store a packet, returning whether it was: not for unknown messages, or for
+## frames that don't decode (e.g. an inverter register missing from the DBC)
+def _store(can: Database, conn: sqlite3.Connection, packet: tuple[int, int, bytes]) -> bool:
+    try:
+        return _upload_packet(can, conn, packet)
+    except Exception:
+        return False
 
 
 class _Receiver:
@@ -268,6 +326,9 @@ class CanBusReceiver(_Receiver):
         self._first: float | None = None  # receiving thread
         # Why receiving stopped, kept apart from last_error, which flush() also sets
         self.bus_error: Exception | None = None
+        # Every frame seen on the bus, and its bits without stuffing, for the bus load
+        self.frames_seen = 0
+        self.bits_seen = 0
 
     @property
     def running(self) -> bool:
@@ -320,6 +381,9 @@ class CanBusReceiver(_Receiver):
 
     ## Called on the receiving thread for every frame
     def _receive(self, msg: python_can.Message) -> None:
+        if not msg.is_error_frame:
+            self.frames_seen += 1
+            self.bits_seen += (67 if msg.is_extended_id else 47) + 8 * len(msg.data)
         if msg.is_error_frame or msg.is_remote_frame:
             return
         if len(msg.data) > 8:

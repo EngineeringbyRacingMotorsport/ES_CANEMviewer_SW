@@ -120,6 +120,15 @@ class Signal(_Model):
             self.Maximum if self.Maximum is not None else default_max,
         )
 
+    @property
+    def discrete(self) -> bool:
+        """Whether the signal holds states rather than a measurement"""
+        return self.Length == 1 or self.Multiplexer or bool(self.Choices)
+
+    def choice_labels(self) -> dict[Number, str]:
+        """Label of each value, keyed by the decoded value, as stored"""
+        return {raw * self.Factor + self.Offset: name for raw, name in (self.Choices or {}).items()}
+
 
 class Message(_Model):
     Id: HexId
@@ -260,6 +269,46 @@ def _column_type(signal: Signal) -> str:
     return "REAL"
 
 
+## Latest-value lookups stay fast however long the recording gets. Multiplexed
+## signals get their own, since they may be rare or never sent. The ':' keeps
+## index names apart from message names.
+def _create_indexes(conn: sqlite3.Connection, schema: Schema) -> None:
+    ts = quote_ident(TIMESTAMP_COLUMN)
+    for name, message in schema.Messages.items():
+        table = quote_ident(name)
+        conn.execute(f"CREATE INDEX IF NOT EXISTS {quote_ident(name + ':' + TIMESTAMP_COLUMN)} ON {table} ({ts})")
+        for signal_name, signal in message.Signals.items():
+            if signal.MultiplexerIds is not None:
+                conn.execute(
+                    f"CREATE INDEX IF NOT EXISTS {quote_ident(name + ':' + signal_name)} ON {table} ({ts})"
+                    f" WHERE {quote_ident(signal_name)} IS NOT NULL"
+                )
+
+
+## A database saved earlier (e.g. by tools.live --save), copied to memory so
+## the file isn't kept open or changed. Refused unless it has the loaded
+## schema's tables and columns.
+def load_database(path: str) -> sqlite3.Connection:
+    schema = unwrap(_schema)[1]
+    conn = sqlite3.connect(":memory:")
+    try:
+        with open(path, "rb") as f:
+            conn.deserialize(f.read())
+        for name, message in schema.Messages.items():
+            try:
+                cursor = conn.execute(f"SELECT * FROM {quote_ident(name)} LIMIT 0")
+            except sqlite3.Error:
+                raise ValueError(f"The file has no table for message {name}")
+            if [c[0] for c in cursor.description] != [TIMESTAMP_COLUMN, *message.Signals]:
+                raise ValueError(f"The signals of message {name} don't match {unwrap(_schema)[0]}")
+        # Older files were saved without them
+        _create_indexes(conn, schema)
+    except:
+        conn.close()
+        raise
+    return conn
+
+
 # One table per message (named after it), with the reception time followed by
 # one column per signal
 def _create_connection(schema: Schema) -> sqlite3.Connection:
@@ -279,20 +328,7 @@ def _create_connection(schema: Schema) -> sqlite3.Connection:
                     f"{quote_ident(signal_name)} {_column_type(signal)}{'' if nullable else ' NOT NULL'}"
                 )
             conn.execute(f"CREATE TABLE {quote_ident(name)} ({', '.join(columns)})")
-            # Latest-value lookups stay fast however long the recording gets.
-            # Multiplexed signals get their own, since they may be rare or never
-            # sent. The ':' keeps index names apart from message names.
-            conn.execute(
-                f"CREATE INDEX {quote_ident(name + ':' + TIMESTAMP_COLUMN)}"
-                f" ON {quote_ident(name)} ({quote_ident(TIMESTAMP_COLUMN)})"
-            )
-            for signal_name, signal in message.Signals.items():
-                if signal.MultiplexerIds is not None:
-                    conn.execute(
-                        f"CREATE INDEX {quote_ident(name + ':' + signal_name)}"
-                        f" ON {quote_ident(name)} ({quote_ident(TIMESTAMP_COLUMN)})"
-                        f" WHERE {quote_ident(signal_name)} IS NOT NULL"
-                    )
+        _create_indexes(conn, schema)
     except:
         conn.close()
         raise

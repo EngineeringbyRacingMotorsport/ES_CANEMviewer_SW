@@ -4,11 +4,14 @@ signal metadata file. Each message with a CycleTime is sent at that period.
 
 Run from the project root: python -m tools.gen_example [json_path] [out_path]
 
-Timeline (20 s, 10 ms ticks):
-- 0..2 s: precharge, AIRs close, ready-to-drive
-- 2..12 s: acceleration
-- 12..16 s: braking
-- 16..20 s: standstill
+Recreates a datalogger log of a 10-minute session (10 ms ticks):
+- 0..5 s: Idle, low voltage on
+- 5..7 s: precharge, AIR- closed, DC link charging
+- 7..10 s: TS active, AIR+ closed
+- 10 s: ready-to-drive, button pressed with the brake on
+- 11..570 s: laps of about 70 s (straights and corners)
+- 570..580 s: slowing to a stop; at 580 s ready-to-drive is left (TS active)
+- 590 s: TS off, AIRs open, DC link discharges, back to Idle
 """
 
 import math
@@ -20,7 +23,17 @@ from typing import Any
 from src.schema import Schema, _create_database
 from src.utils import read_text_file
 
-DURATION_MS = 20_000
+DURATION_MS = 600_000
+# Session timeline, in seconds
+PRECHARGE_AT = 5.0
+TS_ACTIVE_AT = 7.0
+R2D_AT = 10.0
+STOP_AT = 570.0
+R2D_OFF_AT = 580.0
+TS_OFF_AT = 590.0
+# Target speed (km/h) along a lap, as (seconds into the lap it lasts until, speed)
+LAP_ENDS = ((8, 90), (12, 40), (18, 70), (21, 30), (31, 100), (36, 45), (43, 75), (47, 35), (56, 85), (60, 40), (70, 60))
+LAP_S = LAP_ENDS[-1][0]
 TICK_MS = 10
 
 # Inverter registers sent in turn by InverterTX, selected by RegID
@@ -57,6 +70,8 @@ class Car:
         self.speed = 0.0  # km/h
         self.t_igbt = 32.0
         self.t_mot = 30.0
+        self.used_ah = 0.0  # charge drawn from the battery
+        self.dc_link = 0.0  # inverter side voltage, V
         self.inverter_register = 0
 
     def noise(self, amplitude: float) -> float:
@@ -64,61 +79,96 @@ class Car:
 
     def update(self, t: float, dt: float) -> None:
         self.t = t
-        self.precharging = t < 1.0
-        self.hv = t >= 1.0
-        self.r2d = t >= 2.0
-        self.accel = 2.0 <= t < 12.0
-        self.braking = 12.0 <= t < 16.0
+        # Phase as the FrontECU would report it (Phase.I/P/T/R = 0..3)
+        if t < PRECHARGE_AT or t >= TS_OFF_AT:
+            self.phase = 0
+        elif t < TS_ACTIVE_AT:
+            self.phase = 1
+        elif R2D_AT <= t < R2D_OFF_AT:
+            self.phase = 3
+        else:
+            self.phase = 2
+        self.precharging = self.phase == 1
+        self.air_neg = self.phase >= 1
+        self.hv = self.phase >= 2  # AIR+ closed
+        self.r2d = self.phase == 3
+        # Momentary buttons, held for half a second
+        self.r2d_button = any(at <= t < at + 0.5 for at in (R2D_AT, R2D_OFF_AT))
+        self.ts_off_button = TS_OFF_AT <= t < TS_OFF_AT + 0.5
 
-        # Throttle ramps up, then eases off towards the end of the acceleration
-        self.throttle = 0.0
-        if self.accel:
-            self.throttle = min(95.0, 30.0 + 15.0 * (t - 2.0)) - max(
-                0.0, (t - 10.0) * 20
-            )
-        self.brake = 0.0
-        if self.braking:
-            self.brake = 25.0 + 10.0 * math.sin((t - 12.0) * math.pi / 4.0)
+        self.throttle, self.brake = self.driver(t)
 
         # Acceleration in m/s², converted to km/h
         drag = 0.2 + 0.0004 * self.speed**2
         self.speed += (self.throttle * 0.025 - self.brake * 0.2 - drag) * dt * 3.6
         self.speed = max(0.0, self.speed)
 
-        self.current = self.throttle * 2.2 + self.noise(2.0) if self.hv else 0.0
+        self.current = max(0.0, self.throttle * 2.2 + self.noise(2.0)) if self.r2d else 0.0
+        self.used_ah += self.current * dt / 3600
+        # Pack voltage sags with the load and drops as the battery discharges
+        self.pack = 400.0 - self.used_ah * 0.8 - self.current * 0.15
+        if self.precharging:
+            self.dc_link += (self.pack - self.dc_link) * dt / 0.4
+        elif self.hv:
+            self.dc_link = self.pack
+        else:
+            # Discharge circuit once the AIRs open
+            self.dc_link -= self.dc_link * dt / 0.5
         self.t_igbt += (self.current * 0.01 - (self.t_igbt - 32.0) * 0.02) * dt
         self.t_mot += (self.current * 0.006 - (self.t_mot - 30.0) * 0.01) * dt
+
+    def driver(self, t: float) -> tuple[float, float]:
+        """Throttle (%) and brake pressure following the lap's target speed"""
+        # Holding the brake while pressing the R2D button, to enter and to leave it
+        if any(at <= t < at + 1.0 for at in (R2D_AT, R2D_OFF_AT)):
+            return 0.0, 30.0
+        if not self.r2d:
+            return 0.0, 0.0
+        if t >= STOP_AT:
+            # Brake to a standstill and keep the brake on
+            return 0.0, min(40.0, 10.0 + self.speed * 0.5)
+        else:
+            into_lap = (t - R2D_AT - 1.0) % LAP_S
+            target = next(speed for end, speed in LAP_ENDS if into_lap < end)
+        error = target - self.speed
+        if error > 2.0:
+            throttle, brake = 20.0 + error * 4.0 + self.noise(1.0), 0.0
+        elif error < -4.0:
+            throttle, brake = 0.0, -error * 0.8 + self.noise(0.5)
+        else:
+            throttle, brake = 8.0 + self.speed * 0.15 + self.noise(1.0), 0.0  # holding speed
+        return min(100.0, max(0.0, throttle)), min(40.0, max(0.0, brake))
 
     def signals(self, name: str) -> dict[str, Any] | None:
         speed = round(self.speed)
         rpm = round(self.speed / 3.6 / (2 * math.pi * 0.23) * 60 * 4.4)
         b = int  # booleans encoded as 0/1
-        voltage = round(398 - self.current * 0.15) if self.hv else 0
+        voltage = round(self.dc_link)
         count = round(self.t * 10) % 256  # measurement counters
 
         match name:
             case "FrontECU_M1":
                 return {
-                    "FpDIGRpot": max(0.0, self.throttle + self.noise(0.5)),
-                    "FpDIGLpot": max(0.0, self.throttle + self.noise(0.5)),
-                    "FpDIGRvel": max(0, speed + self.rng.randint(-1, 1)),
-                    "FpDIGLvel": max(0, speed + self.rng.randint(-1, 1)),
+                    "FpDIGRpot": min(100.0, max(0.0, self.throttle + self.noise(0.5))),
+                    "FpDIGLpot": min(100.0, max(0.0, self.throttle + self.noise(0.5))),
+                    # Wheel speed sensors read a clean 0 at standstill
+                    "FpDIGRvel": max(0, speed + self.rng.randint(-1, 1)) if speed else 0,
+                    "FpDIGLvel": max(0, speed + self.rng.randint(-1, 1)) if speed else 0,
                     "FpANLbrake": max(0.0, self.brake + self.noise(0.3)),
                 }
             case "FrontECU_M2":
                 return {
-                    "FpINTtsoff": 0,
+                    "FpINTtsoff": b(self.ts_off_button),
                     "FpINTsbms": 0,
-                    "FpINTr2d": b(self.r2d),
+                    "FpINTr2d": b(self.r2d_button),
                     "FpINTmenu": 0,
                     "FpDIGmicrosd": 1,
-                    # Phase.P/T/R; the simulated drive starts precharging, so never I
-                    "FpSTAphase": 3 if self.r2d else 2 if self.hv else 1,
+                    "FpSTAphase": self.phase,
                     "FpSDCinertia": 1,
                     "FpSDCbots": 1,
                     "FpSDCcsdb": 1,
                     "FpERRapps": 0,
-                    "FpDIGrefri": b(self.r2d),
+                    "FpDIGrefri": b(self.hv),
                     "FpDIGr2d": b(self.r2d),
                     "FpDIGvel": speed,
                     "FpSHU": 310 + self.rng.randint(-15, 15),
@@ -130,10 +180,10 @@ class Car:
                     "RpSDCtsms": 1,
                     "RpSDClsdb": 1,
                     "RpSDCrsdb": 1,
-                    "RpSTAbrkledR": b(self.braking),
+                    "RpSTAbrkledR": b(self.brake > 2.0),
                     "RpSTAbrkledG": 0,
                     "RpSTAbrkledB": 0,
-                    "RpSIGlvs": 24_800 + self.rng.randint(-150, 150),
+                    "RpSIGlvs": round(24_800 - self.t * 0.8) + self.rng.randint(-150, 150),
                 }
             case "RearECU_M2":
                 return {
@@ -207,7 +257,7 @@ class Car:
                 }
             case "HVAB":
                 return {
-                    "ApTHRhv": b(self.hv),
+                    "ApTHRhv": b(self.dc_link > 60.0),
                     "ApSHU": 180 + self.rng.randint(-10, 10),
                 }
             case "HVDB":
@@ -218,7 +268,7 @@ class Car:
                     "BpERRtimer": 0,
                     "BpSDC": 1,
                     "DpSDC": 1,
-                    "DpTHRhv": b(self.hv),
+                    "DpTHRhv": b(self.dc_link > 60.0),
                     "DpLCHdischarge": 0,
                     "DpSDCintlck1": 1,
                     "DpSDCintlck2": 1,
@@ -229,15 +279,15 @@ class Car:
                 return {
                     "TpDIGspre": b(self.precharging),
                     "TpDIGsairp": b(self.hv),
-                    "TpDIGsairn": 1,
+                    "TpDIGsairn": b(self.air_neg),
                     "TpDIGipre": b(self.precharging),
                     "TpDIGiairp": b(self.hv),
-                    "TpDIGiairn": 1,
-                    "TpTHRhv": b(self.hv),
+                    "TpDIGiairn": b(self.air_neg),
+                    "TpTHRhv": b(self.dc_link > 60.0),
                     "TpERRscs": 0,
                     "TpTHRdis": 0,
                     "TpLCH": 0,
-                    "TpINTled": b(self.hv),
+                    "TpINTled": b(self.dc_link > 60.0),
                 }
             case "SDCReset":
                 return {

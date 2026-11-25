@@ -37,11 +37,28 @@ def get_phase(timestamp: float | None = None) -> Phase | None:
     return Phase(row[0])
 
 
-## Latest value of each signal of the message, with its state under the mode's
-## limits. Signals without a value yet are left out.
+## When the phase sent by the FrontECU changed, as (time in ms, phase), oldest
+## first; None for a value that isn't a known phase
+def get_phase_changes() -> list[tuple[int, Phase | None]]:
+    _, _, conn = unwrap(get_all())
+    ts = quote_ident(TIMESTAMP_COLUMN)
+    changes: list[tuple[int, Phase | None]] = []
+    for t, value in conn.execute(
+        f"SELECT {ts}, {quote_ident(PHASE_SIGNAL)} FROM {quote_ident(PHASE_MESSAGE)} ORDER BY {ts}"
+    ):
+        phase = Phase(value) if value in Phase._value2member_map_ else None
+        if not changes or changes[-1][1] != phase:
+            changes.append((t, phase))
+    return changes
+
+
+## Latest value of each signal of the message, at or before `until` (ms) when
+## given, with its state under the mode's limits. Signals without a value yet are
+## left out.
 def get_latest_state(
     phase: Phase,
     message: Identifier,
+    until: int | None = None,
 ) -> dict[str, tuple[int | float, State]]:
     schema, _, conn = unwrap(get_all())
 
@@ -55,12 +72,13 @@ def get_latest_state(
     # present in some of the rows
     table = quote_ident(message)
     order = _latest_first(keys)
+    before, params = _until(until)
     columns = ", ".join(
-        f"(SELECT {quote_ident(k)} FROM {table} WHERE {quote_ident(k)} IS NOT NULL"
+        f"(SELECT {quote_ident(k)} FROM {table} WHERE {quote_ident(k)} IS NOT NULL{before}"
         f" ORDER BY {order} LIMIT 1)"
         for k in keys
     )
-    row = conn.execute(f"SELECT {columns}").fetchone()
+    row = conn.execute(f"SELECT {columns}", params * len(keys)).fetchone()
 
     res: dict[str, tuple[int | float, State]] = {}
     for key, limit, value in zip(keys, limits, row):
@@ -101,19 +119,20 @@ def get_state_at(
     return res
 
 
-## Time (ms) of the latest sample of each signal of the message. Signals
-## without a sample yet are left out.
-def get_latest_times(message: Identifier) -> dict[str, int]:
+## Time (ms) of the latest sample of each signal of the message, at or before
+## `until` when given. Signals without a sample yet are left out.
+def get_latest_times(message: Identifier, until: int | None = None) -> dict[str, int]:
     schema, _, conn = unwrap(get_all())
     keys = list(schema.Messages[message].Signals)
     if not keys:
         return {}
     table = quote_ident(message)
     ts = quote_ident(TIMESTAMP_COLUMN)
+    before, params = _until(until)
     columns = ", ".join(
-        f"(SELECT MAX({ts}) FROM {table} WHERE {quote_ident(k)} IS NOT NULL)" for k in keys
+        f"(SELECT MAX({ts}) FROM {table} WHERE {quote_ident(k)} IS NOT NULL{before})" for k in keys
     )
-    row = conn.execute(f"SELECT {columns}").fetchone()
+    row = conn.execute(f"SELECT {columns}", params * len(keys)).fetchone()
     return {k: t for k, t in zip(keys, row) if t is not None}
 
 
@@ -127,19 +146,60 @@ def get_newest_time() -> int | None:
     return max((t for t in conn.execute(f"SELECT {columns}").fetchone() if t is not None), default=None)
 
 
-## Last samples of a signal as (time in ms, value), oldest first
+## Time (ms) of the oldest frame of any message, None before the first one
+def get_oldest_time() -> int | None:
+    schema, _, conn = unwrap(get_all())
+    if not schema.Messages:
+        return None
+    ts = quote_ident(TIMESTAMP_COLUMN)
+    columns = ", ".join(f"(SELECT MIN({ts}) FROM {quote_ident(m)})" for m in schema.Messages)
+    return min((t for t in conn.execute(f"SELECT {columns}").fetchone() if t is not None), default=None)
+
+
+## Last samples of a signal, at or before `until` when given, as (time in ms,
+## value), oldest first
 def get_last_samples(
-    message: Identifier, signal: Identifier, count: int
+    message: Identifier, signal: Identifier, count: int, until: int | None = None
 ) -> list[tuple[int, int | float]]:
     schema, _, conn = unwrap(get_all())
     column = quote_ident(signal)
+    before, params = _until(until)
     rows = conn.execute(
         f"SELECT {quote_ident(TIMESTAMP_COLUMN)}, {column} FROM {quote_ident(message)}"
-        f" WHERE {column} IS NOT NULL"
+        f" WHERE {column} IS NOT NULL{before}"
         f" ORDER BY {_latest_first(schema.Messages[message].Signals)} LIMIT ?",
-        (count,),
+        (*params, count),
     ).fetchall()
     return rows[::-1]
+
+
+## Samples of a signal from `start` to `end` (ms, both included), oldest first,
+## plus the last one before `start`, so a line reaches the window's left edge
+def get_samples_between(
+    message: Identifier, signal: Identifier, start: int, end: int
+) -> list[tuple[int, int | float]]:
+    schema, _, conn = unwrap(get_all())
+    column = quote_ident(signal)
+    table = quote_ident(message)
+    ts = quote_ident(TIMESTAMP_COLUMN)
+    order = _latest_first(schema.Messages[message].Signals)
+    rows = conn.execute(
+        f"SELECT {ts}, {column} FROM {table}"
+        f" WHERE {column} IS NOT NULL AND {ts} BETWEEN ? AND ?"
+        f" ORDER BY {order.replace('DESC', 'ASC')}",
+        (start, end),
+    ).fetchall()
+    before = conn.execute(
+        f"SELECT {ts}, {column} FROM {table} WHERE {column} IS NOT NULL AND {ts} < ?"
+        f" ORDER BY {order} LIMIT 1",
+        (start,),
+    ).fetchone()
+    return ([before] if before else []) + rows
+
+
+def _until(until: int | None) -> tuple[str, tuple[int, ...]]:
+    ts = quote_ident(TIMESTAMP_COLUMN)
+    return (f" AND {ts} <= ?", (until,)) if until is not None else ("", ())
 
 
 ## Newest sample first. Timestamps are rounded to ms, so samples can share one;
