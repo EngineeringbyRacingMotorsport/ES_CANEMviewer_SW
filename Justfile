@@ -36,3 +36,6 @@ plot *ARGS:
 
 live *ARGS:
     {{ VENV_PYTHON_PATH }} -m tools.live {{ ARGS }}
+
+replay *ARGS:
+    {{ VENV_PYTHON_PATH }} -m tools.replay {{ ARGS }}
