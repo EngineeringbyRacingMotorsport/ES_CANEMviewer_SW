@@ -49,10 +49,6 @@ def read_series(conn: sqlite3.Connection, message: str, signal: str) -> Series:
     return ([t / 1000 for t, _ in rows], [v for _, v in rows])
 
 
-def is_discrete(signal: Signal) -> bool:
-    """Whether the signal holds states rather than a measurement"""
-    return signal.Length == 1 or signal.Multiplexer or bool(signal.Choices)
-
 
 class PlotApp:
     def __init__(self, root: ttk.Window, json_path: str) -> None:
@@ -261,7 +257,7 @@ class PlotApp:
     def plot_signal(self, ax: Axes, message: str, name: str, signal: Signal) -> None:
         times, values = self.series(message, name)
         label = f"{name} [{signal.Unit}]" if signal.Unit else name
-        if is_discrete(signal):
+        if signal.discrete:
             ax.step(times, values, where="post", label=label)
         else:
             ax.plot(times, values, linewidth=1, label=label)
@@ -281,11 +277,7 @@ class PlotApp:
     def label_choices(ax: Axes, signal: Signal) -> None:
         if not signal.Choices:
             return
-        # Physical value of each raw choice, as stored in the database
-        ticks = {
-            raw * signal.Factor + signal.Offset: text
-            for raw, text in signal.Choices.items()
-        }
+        ticks = signal.choice_labels()
         ax.set_yticks(list(ticks), list(ticks.values()))
 
 

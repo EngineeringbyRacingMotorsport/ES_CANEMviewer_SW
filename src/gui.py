@@ -1,5 +1,6 @@
 from datetime import datetime
 from pathlib import Path
+import time
 
 import tkinter as tk
 import ttkbootstrap as ttk
@@ -13,6 +14,7 @@ from .state import (
     get_latest_times,
     get_newest_time,
     get_phase,
+    get_samples_between,
 )
 from .utils import unwrap
 from can.typechecking import AutoDetectedConfig
@@ -32,6 +34,15 @@ PHASE_NAMES = {
 
 ICONS_DIR = Path(__file__).parent / "icons"
 SCHEMA_PATH = "EMXCAN.json"
+
+# Time (ms) every page shows. None shows the newest data (CAN); in Datalogger
+# mode the timeline sets it.
+view_time: int | None = None
+
+
+def current_time() -> int | None:
+    """Time shown by every page, None while there's no data"""
+    return view_time if view_time is not None else get_newest_time()
 
 
 def signals_by_board(schema: Schema) -> dict[str, dict[str, list[str]]]:
@@ -153,8 +164,7 @@ def clickable(widget: tk.Widget, command: Callable[[], None]) -> None:
 def format_value(signal: Signal, value: int | float) -> str:
     # Integers in full; floats without the noise of their binary representation
     text = str(value) if isinstance(value, int) else f"{value:.10g}"
-    # Choices are keyed by raw value, but the value is stored decoded
-    choices = {raw * signal.Factor + signal.Offset: name for raw, name in (signal.Choices or {}).items()}
+    choices = signal.choice_labels()
     if value in choices:
         text += f" ({choices[value]})"
     return text
@@ -268,32 +278,230 @@ def build_node_view(
     refresh()
     return {"refresh": refresh, "close": view.destroy}
 
-def build_grafics(parent_frame, signals):
-    
-    config_frame = ttk.Frame(parent_frame, height=700, width=1300, borderwidth=2, relief="ridge")
-    config_frame.pack(pady=5, padx=5, anchor="nw", side="left", expand=False)
+## Grid position (row, column) of each graph shown, per layout button icon
+GRAPH_LAYOUTS = {
+    "square.svg": [(0, 0)],
+    "rows-2.svg": [(0, 0), (1, 0)],
+    "columns-2.svg": [(0, 0), (0, 1)],
+    "grid-2x2.svg": [(0, 0), (0, 1), (1, 0), (1, 1)],
+}
 
-    square = load_svg("square.svg", 24)
-    rows_2 = load_svg("rows-2.svg", 24)
-    columns_2 = load_svg("columns-2.svg", 24)
-    icon_2x2 = load_svg("grid-2x2.svg", 24)
 
-    # pack() returns None, so keep the button to hold a reference to its image
-    square_button = ttk.Button(config_frame, image=square, padding=(0,0), cursor="hand2")
-    square_button.pack(padx=5, pady=5, side="left")
-    square_button.image = square
+class Graph:
+    """One graph of the Gràfics page, with the signals it shows"""
 
-    rows_2_button = ttk.Button(config_frame, image=rows_2, padding=(0,0), cursor="hand2")
-    rows_2_button.pack(padx=5, pady=5, side="left")
-    rows_2_button.image = rows_2
+    def __init__(
+        self, parent: tk.Widget, number: int, on_click: Callable[[], None], on_change: Callable[[], None]
+    ) -> None:
+        self.on_change = on_change  # redraws the values after the signals change
+        self.box = ttk.Labelframe(parent, text=f"Gràfic {number}", padding=4)
+        self.tags = ttk.Frame(self.box)
+        self.tags.pack(fill="x")
+        # Small requested size: the graph grows to fill its cell, never past it.
+        # No layout engine: it nearly doubles the time of every redraw, so the
+        # margins are fixed in pixels instead.
+        self.figure = Figure(figsize=(3, 2))
+        self.axes = self.figure.add_subplot()
+        self.canvas = FigureCanvasTkAgg(self.figure, master=self.box)
+        self.canvas.get_tk_widget().pack(fill="both", expand=True)
+        self.canvas.mpl_connect("resize_event", lambda _: self.fit_margins())
+        self.signals: list[tuple[str, str]] = []  # (message, signal)
+        self.lines: list = []
+        self.drawn: tuple[int, int, int] | None = None  # (start, end, newest) last drawn
+        for widget in (self.box, self.canvas.get_tk_widget()):
+            widget.bind("<Button-1>", lambda _: on_click(), add="+")
+        self.rebuild()
 
-    columns_2_button = ttk.Button(config_frame, image=columns_2, padding=(0,0), cursor="hand2")
-    columns_2_button.pack(padx=5, pady=5, side="left")
-    columns_2_button.image = columns_2
+    def add(self, message: str, signal: str) -> None:
+        if (message, signal) not in self.signals:
+            self.signals.append((message, signal))
+            self.rebuild()
+            self.on_change()
 
-    icon_2x2_button = ttk.Button(config_frame, image=icon_2x2, padding=(0,0), cursor="hand2")
-    icon_2x2_button.pack(padx=5, pady=5, side="left")
-    icon_2x2_button.image = icon_2x2
+    def remove(self, key: tuple[str, str]) -> None:
+        self.signals.remove(key)
+        self.rebuild()
+        self.on_change()
+
+    def fit_margins(self) -> None:
+        # Margins in screen points, so they hold at any display scaling
+        width, height = self.figure.get_size_inches() * 72
+        if width > 120 and height > 80:
+            self.figure.subplots_adjust(left=55 / width, right=1 - 8 / width, top=1 - 8 / height, bottom=38 / height)
+
+    def rebuild(self) -> None:
+        """Lines, tags and axes for the current signals; values come in draw()"""
+        schema = unwrap(get_schema())
+        self.drawn = None
+        for tag in self.tags.winfo_children():
+            tag.destroy()
+        self.axes.clear()
+        self.axes.grid(True, alpha=0.3)
+        self.axes.set_xlabel("Temps (s)")
+        self.lines = []
+        if not self.signals:
+            self.axes.text(0.5, 0.5, "Tria el gràfic i fes doble clic en un senyal", ha="center",
+                           va="center", color="gray", transform=self.axes.transAxes)
+            self.canvas.draw_idle()
+            return
+
+        units: list[str] = []
+        for message, name in self.signals:
+            signal = schema.Messages[message].Signals[name]
+            label = f"{name} [{signal.Unit}]" if signal.Unit else name
+            (line,) = self.axes.plot([], [], linewidth=1, label=label,
+                                     drawstyle="steps-post" if signal.discrete else "default")
+            self.lines.append(line)
+            if signal.Unit and signal.Unit not in units:
+                units.append(signal.Unit)
+            ttk.Button(self.tags, text=f"{name} ✕", bootstyle="secondary-outline", padding=(4, 0),
+                       cursor="hand2", command=lambda key=(message, name): self.remove(key)).pack(side="left", padx=2)
+        self.axes.set_ylabel(", ".join(units))
+        self.axes.legend(loc="upper left", fontsize="small")
+        if len(self.signals) == 1:
+            # A single labelled signal shows its labels (e.g. the phase I/P/T/R)
+            labels = schema.Messages[self.signals[0][0]].Signals[self.signals[0][1]].choice_labels()
+            if labels:
+                self.axes.set_yticks(list(labels), list(labels.values()))
+        self.canvas.draw_idle()
+
+    def draw(self, start: int, end: int, newest: int) -> None:
+        """Values from `start` to `end` (ms); `newest` is the newest frame stored,
+        so nothing is redrawn while neither the window nor the data changed"""
+        if not self.signals or self.drawn == (start, end, newest):
+            return
+        self.drawn = (start, end, newest)
+        for (message, signal), line in zip(self.signals, self.lines):
+            samples = get_samples_between(message, signal, start, end)
+            line.set_data([t / 1000 for t, _ in samples], [v for _, v in samples])
+        self.axes.set_xlim(start / 1000, end / 1000)
+        # The y axis fits the values shown
+        self.axes.relim()
+        self.axes.autoscale_view(scalex=False)
+        # Drawn now rather than when idle, so the caller can time it
+        self.canvas.draw()
+
+
+def build_grafics(parent_frame, signals: dict[str, dict[str, list[str]]]) -> Callable[[], None]:
+    """Fins a 4 gràfics amb els senyals triats a l'arbre de l'esquerra.
+    Returns the function that redraws them."""
+    schema = unwrap(get_schema())
+
+    top = ttk.Frame(parent_frame)
+    top.pack(fill="x", padx=5, pady=5)
+    left = ttk.Frame(parent_frame)
+    left.pack(side="left", fill="y", padx=5, pady=(0, 5))
+    area = ttk.Frame(parent_frame)
+    area.pack(side="left", fill="both", expand=True, padx=(0, 5), pady=(0, 5))
+
+    graphs: list[Graph] = []
+    active = [0]  # index of the graph signals are added to
+
+    def activate(index: int) -> None:
+        active[0] = index
+        for i, graph in enumerate(graphs):
+            graph.box.configure(bootstyle="primary" if i == index else "default")
+
+    graphs.extend(Graph(area, i + 1, lambda i=i: activate(i), lambda: refresh(now=True)) for i in range(4))
+
+    def set_layout(icon: str) -> None:
+        cells = GRAPH_LAYOUTS[icon]
+        for graph in graphs:
+            graph.box.grid_forget()
+        # Graphs left out keep their signals, so going back shows them again
+        for graph, (row, column) in zip(graphs, cells):
+            graph.box.grid(row=row, column=column, sticky="nsew", padx=3, pady=3)
+        for i in range(2):
+            area.rowconfigure(i, weight=1 if any(r == i for r, _ in cells) else 0)
+            area.columnconfigure(i, weight=1 if any(c == i for _, c in cells) else 0)
+        if active[0] >= len(cells):
+            activate(0)
+        refresh(now=True)
+
+    for icon in GRAPH_LAYOUTS:
+        image = load_svg(icon, 24)
+        button = ttk.Button(top, image=image, padding=(0, 0), cursor="hand2", command=lambda icon=icon: set_layout(icon))
+        button.pack(padx=5, side="left")
+        button.image = image  # keep a reference, or Tk drops the image
+    ttk.Label(top, text="Finestra:").pack(side="left", padx=(20, 5))
+    window = ttk.Spinbox(top, from_=1, to=600, increment=5, width=5, command=lambda: refresh(now=True))
+    window.set(10)
+    window.pack(side="left")
+    window.bind("<Return>", lambda _: refresh(now=True))
+    ttk.Label(top, text="s").pack(side="left", padx=5)
+
+    # Signal tree: node -> message -> signal, filtered by the search box
+    search = tk.StringVar()
+    ttk.Entry(left, textvariable=search).pack(fill="x", pady=(0, 5))
+    tree = ttk.Treeview(left, columns=("unit",), selectmode="browse")
+    tree.heading("#0", text="Senyal", anchor="w")
+    tree.heading("unit", text="Unitat", anchor="w")
+    tree.column("#0", width=230)
+    tree.column("unit", width=60)
+    scroll = ttk.Scrollbar(left, orient="vertical", command=tree.yview)
+    tree.configure(yscrollcommand=scroll.set)
+    tree.pack(side="left", fill="y")
+    scroll.pack(side="left", fill="y")
+
+    def populate(*_: object) -> None:
+        tree.delete(*tree.get_children())
+        query = search.get().strip().lower()
+        for node, messages in signals.items():
+            node_id = None
+            for message, names in messages.items():
+                matching = [n for n in names if query in n.lower() or query in message.lower() or query in node.lower()]
+                if not matching:
+                    continue
+                if node_id is None:
+                    node_id = tree.insert("", "end", text=node, open=bool(query))
+                message_id = tree.insert(node_id, "end", text=message, open=bool(query))
+                for name in matching:
+                    tree.insert(message_id, "end", iid=f"{message}.{name}", text=name,
+                                values=(schema.Messages[message].Signals[name].Unit,))
+
+    def on_double_click(_: tk.Event) -> None:
+        selection = tree.selection()
+        if selection and "." in selection[0]:
+            message, name = selection[0].split(".", 1)
+            graphs[active[0]].add(message, name)
+
+    search.trace_add("write", populate)
+    tree.bind("<Double-1>", on_double_click)
+    populate()
+
+    paused_until = [0.0]  # monotonic time before which the timer skips redraws
+
+    def refresh(now: bool = False) -> None:
+        """Redraws the graphs; `now` for the user's own changes, which the
+        timer's pacing doesn't hold back"""
+        # Hidden graphs aren't redrawn, which keeps the shared timer light
+        if not parent_frame.winfo_ismapped():
+            return
+        # Redrawing takes ~40 ms a graph, so the timer waits as long as the last
+        # redraw took: the window keeps half its time for everything else
+        if not now and time.monotonic() < paused_until[0]:
+            return
+        started = time.monotonic()
+        newest = get_newest_time()
+        end = view_time if view_time is not None else newest
+        if end is None or newest is None:
+            return
+        try:
+            seconds = min(600, max(1, int(window.get())))
+        except ValueError:
+            seconds = 10
+        for graph in graphs:
+            if graph.box.winfo_manager():
+                graph.draw(end - seconds * 1000, end, newest)
+        paused_until[0] = time.monotonic() + (time.monotonic() - started)
+
+    # Showing the tab draws the graphs at once, without waiting for the timer
+    parent_frame.bind("<Map>", lambda _: refresh(now=True), add="+")
+    set_layout("grid-2x2.svg")
+    activate(0)
+    return refresh
+
+
 def build_connect(parent_frame, on_data: Callable[[], None]):
     """Connexió en directe a un adaptador CAN; les trames es desen a la base de dades
     i on_data() actualitza el que es mostra."""
@@ -504,10 +712,10 @@ def create_app():
             if sub_title == "Traffic light":
                 refresh_trafficlight = build_trafficlight(sub_frame, dict_signals)
             if sub_title == "Gràfics":
-                build_grafics(sub_frame, dict_signals)
+                refresh_grafics = build_grafics(sub_frame, dict_signals)
             if sub_title == "Connectar":
-                # "Visualitzar" is built first, so the Traffic light already exists
-                build_connect(sub_frame, refresh_trafficlight)
+                # "Visualitzar" is built first, so its pages already exist
+                build_connect(sub_frame, lambda: (refresh_trafficlight(), refresh_grafics()))
             if sub_title == "Temperatures":
                 build_temperatures(sub_frame, dict_signals)
     return root

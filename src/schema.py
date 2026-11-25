@@ -120,6 +120,15 @@ class Signal(_Model):
             self.Maximum if self.Maximum is not None else default_max,
         )
 
+    @property
+    def discrete(self) -> bool:
+        """Whether the signal holds states rather than a measurement"""
+        return self.Length == 1 or self.Multiplexer or bool(self.Choices)
+
+    def choice_labels(self) -> dict[Number, str]:
+        """Label of each value, keyed by the decoded value, as stored"""
+        return {raw * self.Factor + self.Offset: name for raw, name in (self.Choices or {}).items()}
+
 
 class Message(_Model):
     Id: HexId
