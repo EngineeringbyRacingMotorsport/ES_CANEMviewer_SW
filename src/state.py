@@ -37,6 +37,21 @@ def get_phase(timestamp: float | None = None) -> Phase | None:
     return Phase(row[0])
 
 
+## When the phase sent by the FrontECU changed, as (time in ms, phase), oldest
+## first; None for a value that isn't a known phase
+def get_phase_changes() -> list[tuple[int, Phase | None]]:
+    _, _, conn = unwrap(get_all())
+    ts = quote_ident(TIMESTAMP_COLUMN)
+    changes: list[tuple[int, Phase | None]] = []
+    for t, value in conn.execute(
+        f"SELECT {ts}, {quote_ident(PHASE_SIGNAL)} FROM {quote_ident(PHASE_MESSAGE)} ORDER BY {ts}"
+    ):
+        phase = Phase(value) if value in Phase._value2member_map_ else None
+        if not changes or changes[-1][1] != phase:
+            changes.append((t, phase))
+    return changes
+
+
 ## Latest value of each signal of the message, at or before `until` (ms) when
 ## given, with its state under the mode's limits. Signals without a value yet are
 ## left out.

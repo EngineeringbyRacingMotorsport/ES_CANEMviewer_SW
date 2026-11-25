@@ -27,6 +27,7 @@ from .state import (
     get_newest_time,
     get_oldest_time,
     get_phase,
+    get_phase_changes,
     get_samples_between,
 )
 from .utils import unwrap
@@ -82,6 +83,8 @@ def build_trafficlight(parent_frame, signals):
     # Every signal's state depends on the phase, so it's shown above both views
     phase_label = ttk.Label(parent_frame, font=("TkDefaultFont", 11, "bold"), padding=(5, 2))
     phase_label.pack(side="top", anchor="w")
+    # Packed before the grid and the node view, so it keeps its place at the bottom
+    build_timeline(parent_frame)
     grid_view = ttk.Frame(parent_frame)
     grid_view.pack(fill="both", expand=True)
     node_view: dict[str, Callable[[], None]] = {}  # "refresh" / "close" of the open node, if any
@@ -400,107 +403,178 @@ class Graph:
 
 
 PLAYBACK_SPEEDS = ("0.5×", "1×", "2×", "5×", "10×")
+PHASE_COLOURS = {Phase.I: "#D9D9D9", Phase.P: "#FFE08A", Phase.T: "#FFB38A", Phase.R: "#A8E6A1"}
+UNKNOWN_PHASE_COLOUR = "#FFFFFF"
+TIMELINE_HEIGHT = 34
+TIMELINE_PAD = 8  # px left and right of the box, so the cursor shows at both ends
+
+
+def parse_time(text: str) -> int | None:
+    """ms from "mm:ss.s" or plain seconds, None if it's neither"""
+    try:
+        minutes, _, seconds = text.strip().rpartition(":")
+        ms = round((int(minutes or 0) * 60 + float(seconds)) * 1000)
+    except ValueError:
+        return None
+    return ms if ms >= 0 else None
 
 
 def build_timeline(parent_frame) -> None:
-    """Datalogger timeline: every page shows the moment it's set to. Greyed out
-    in other modes."""
+    """Datalogger timeline: every page shows the moment it's set to, and every
+    timeline shows the same one. Greyed out in other modes."""
     bar = ttk.Frame(parent_frame)
     bar.pack(side="bottom", fill="x", padx=5, pady=(0, 5))
-    start_button = ttk.Button(bar, text="⏮", width=3, cursor="hand2")
+    start_button = ttk.Button(bar, text="⏮", width=3, cursor="hand2", command=lambda: playback.seek(source.start))
     start_button.pack(side="left")
-    play_button = ttk.Button(bar, text="▶", width=3, cursor="hand2")
+    play_button = ttk.Button(bar, text="▶", width=3, cursor="hand2", command=lambda: playback.play(not playback.playing))
     play_button.pack(side="left", padx=5)
     speed = ttk.Combobox(bar, values=PLAYBACK_SPEEDS, state="readonly", width=5)
     speed.set("1×")
     speed.pack(side="left")
-    time_label = ttk.Label(bar, text="--:--.- / --:--.-", width=18, anchor="e")
-    time_label.pack(side="right", padx=(10, 0))
-    track = ttk.Frame(bar)
-    track.pack(side="left", fill="x", expand=True, padx=10)
-    # Where the logger's clock restarted, as marks over the slider
-    marks = tk.Canvas(track, height=6, highlightthickness=0)
-    marks.pack(fill="x")
-    slider = ttk.Scale(track, from_=0, to=1)
-    slider.pack(fill="x")
+    speed.bind("<<ComboboxSelected>>", lambda _: playback.set_speed(speed.get()))
 
-    playing = [False]
-    last_tick = [0.0]  # monotonic time of the last step forward
-    moving = [False]  # the slider is being set by the code, not dragged
+    # Right: the editable current time, the total, and the phase colours
+    legend = ttk.Frame(bar)
+    legend.pack(side="right", padx=(10, 0))
+    for phase, colour in PHASE_COLOURS.items():
+        tk.Label(legend, text=phase.name, background=colour, width=2).pack(side="left", padx=1)
+    total = ttk.Label(bar, text="/ --:--.-", width=9)
+    total.pack(side="right")
+    entry = ttk.Entry(bar, width=8, justify="right")
+    entry.pack(side="right", padx=(10, 4))
+
+    box = tk.Canvas(bar, height=TIMELINE_HEIGHT, highlightthickness=0, background="white", cursor="hand2")
+    box.pack(side="left", fill="x", expand=True, padx=10)
+
+    def x_of(t: int) -> float:
+        width = box.winfo_width() - 2 * TIMELINE_PAD
+        return TIMELINE_PAD + (t - source.start) / max(source.end - source.start, 1) * width
+
+    def time_at(x: float) -> int:
+        width = max(box.winfo_width() - 2 * TIMELINE_PAD, 1)
+        return round(source.start + (x - TIMELINE_PAD) / width * (source.end - source.start))
+
+    def draw(*_: object) -> None:
+        """Phases, minute and 10 s lines, restarts and the box; the cursor is
+        moved by show()"""
+        box.delete("all")
+        height = TIMELINE_HEIGHT
+        active = source.kind == "Datalogger"
+        if active:
+            changes = playback.phases
+            for i, (t, phase) in enumerate(changes):
+                end = changes[i + 1][0] if i + 1 < len(changes) else source.end
+                box.create_rectangle(x_of(t), 0, x_of(end), height,
+                                     fill=PHASE_COLOURS.get(phase, UNKNOWN_PHASE_COLOUR), width=0)
+            # Lines every 10 s from the start of the recording, darker each minute
+            for ms in range(0, source.end - source.start + 1, 10_000):
+                x = x_of(source.start + ms)
+                if ms % 60_000:
+                    box.create_line(x, height * 0.55, x, height, fill="#9A9A9A")
+                else:
+                    box.create_line(x, 0, x, height, fill="#404040")
+                    if ms:
+                        box.create_text(x + 3, 2, text=f"{ms // 60_000}:00", anchor="nw", font=("TkDefaultFont", 7))
+            for restart in source.restarts:
+                box.create_line(x_of(restart), 0, x_of(restart), height, fill="red", width=2, dash=(3, 2))
+        box.create_rectangle(TIMELINE_PAD, 0, box.winfo_width() - TIMELINE_PAD, height - 1,
+                             outline="#808080" if active else "#C8C8C8")
+        box.create_line(0, 0, 0, height, fill="#1F3A93", width=3, tags="cursor", state="hidden")
+        show()
 
     def show() -> None:
-        """Puts the slider, the time and the buttons where view_time is"""
-        active = source.kind == "Datalogger"
-        for widget in (start_button, play_button, slider):
+        """Puts the cursor, the time and the buttons where playback is"""
+        active = source.kind == "Datalogger" and view_time is not None
+        for widget in (start_button, play_button, entry):
             widget.configure(state="normal" if active else "disabled")
         speed.configure(state="readonly" if active else "disabled")
-        play_button.configure(text="⏸" if playing[0] else "▶")
-        if not active or view_time is None:
-            time_label["text"] = "--:--.- / --:--.-"
+        play_button.configure(text="⏸" if playback.playing else "▶")
+        speed.set(playback.speed_text)
+        if not active:
+            box.itemconfigure("cursor", state="hidden")
+            total["text"] = "/ --:--.-"
+            entry.delete(0, "end")
             return
-        moving[0] = True
-        slider.configure(from_=source.start, to=max(source.end, source.start + 1))
-        slider.set(view_time)
-        moving[0] = False
-        time_label["text"] = f"{format_time(view_time - source.start)} / {format_time(source.end - source.start)}"
+        x = x_of(view_time)
+        box.coords("cursor", x, 0, x, TIMELINE_HEIGHT)
+        box.itemconfigure("cursor", state="normal")
+        total["text"] = f"/ {format_time(source.end - source.start)}"
+        # Not while the user is typing a time in it
+        if entry.focus_get() is not entry:
+            entry.delete(0, "end")
+            entry.insert(0, format_time(view_time - source.start))
 
-    def draw_marks(*_: object) -> None:
-        marks.delete("all")
-        width = marks.winfo_width()
-        length = max(source.end - source.start, 1)
-        if source.kind != "Datalogger":
+    def typed(_: tk.Event) -> None:
+        ms = parse_time(entry.get())
+        if ms is None or source.kind != "Datalogger":
+            entry.configure(bootstyle="danger")
             return
-        for restart in source.restarts:
-            x = (restart - source.start) / length * width
-            marks.create_line(x, 0, x, 6, fill="red", width=2)
+        entry.configure(bootstyle="default")
+        box.focus_set()  # leaves the entry, so it shows the time set
+        playback.seek(source.start + ms)
 
-    def set_playing(on: bool) -> None:
-        global view_time
-        if on and view_time is not None and view_time >= source.end:
-            view_time = source.start  # playing again from the end starts over
-        playing[0] = on
-        last_tick[0] = time.monotonic()
-        show()
+    def pressed(event: tk.Event) -> None:
+        if source.kind == "Datalogger":
+            playback.seek(time_at(event.x))
 
-    def to_start() -> None:
-        global view_time
-        view_time = source.start
-        show()
+    entry.bind("<Return>", typed)
+    entry.bind("<KP_Enter>", typed)
+    entry.bind("<Escape>", lambda _: (box.focus_set(), show()))
+    box.bind("<ButtonPress-1>", pressed)
+    box.bind("<B1-Motion>", pressed)
+    box.bind("<Configure>", draw)
+    playback.views.append((draw, show))
 
-    def dragged(value: str) -> None:
-        global view_time
-        if not moving[0] and source.kind == "Datalogger":
-            view_time = int(float(value))
+
+class Playback:
+    """Datalogger playback, shared by every timeline"""
+
+    def __init__(self) -> None:
+        self.playing = False
+        self.speed_text = "1×"
+        self.last_tick = 0.0  # monotonic time of the last step forward
+        self.phases: list[tuple[int, Phase | None]] = []  # the recording's phase changes
+        self.views: list[tuple[Callable[[], None], Callable[[], None]]] = []  # (redraw all, show time)
+
+    def show(self) -> None:
+        for _, show in self.views:
             show()
 
-    def advance() -> None:
-        """Moves the time on while playing; run by the app's timer"""
+    def seek(self, ms: int) -> None:
         global view_time
-        if not playing[0] or source.kind != "Datalogger" or view_time is None:
+        if source.kind != "Datalogger":
+            return
+        view_time = min(max(ms, source.start), source.end)
+        self.show()
+
+    def play(self, on: bool) -> None:
+        if on and view_time is not None and view_time >= source.end:
+            self.seek(source.start)  # playing again from the end starts over
+        self.playing = on and source.kind == "Datalogger"
+        self.last_tick = time.monotonic()
+        self.show()
+
+    def set_speed(self, text: str) -> None:
+        self.speed_text = text
+        self.show()
+
+    def advance(self) -> None:
+        """Moves the time on while playing; run by the app's timer"""
+        if not self.playing or view_time is None:
             return
         now = time.monotonic()
-        factor = float(speed.get().rstrip("×"))
-        view_time = min(source.end, view_time + int((now - last_tick[0]) * 1000 * factor))
-        last_tick[0] = now
+        step = int((now - self.last_tick) * 1000 * float(self.speed_text.rstrip("×")))
+        self.last_tick = now
+        self.seek(view_time + step)
         if view_time >= source.end:
-            playing[0] = False  # stops at the end
-        show()
+            self.play(False)  # stops at the end
 
-    def changed() -> None:
-        playing[0] = False
-        show()
-        draw_marks()
-
-    start_button.configure(command=to_start)
-    play_button.configure(command=lambda: set_playing(not playing[0]))
-    slider.configure(command=dragged)
-    # A click on the track jumps there, as in a video player, instead of Tk's
-    # default single step; the slider is then under the mouse, so it drags on
-    slider.bind("<ButtonPress-1>", lambda e: slider.set(slider.get(e.x, e.y)) if source.kind == "Datalogger" else None)
-    marks.bind("<Configure>", draw_marks)
-    source.tickers.append(advance)
-    source.listeners.append(changed)
-    show()
+    def changed(self) -> None:
+        """A new source: stop, and redraw the timelines for it"""
+        self.playing = False
+        self.phases = get_phase_changes() if source.kind == "Datalogger" else []
+        for draw, _ in self.views:
+            draw()
 
 
 def build_grafics(parent_frame, signals: dict[str, dict[str, list[str]]]) -> Callable[[], None]:
@@ -652,6 +726,9 @@ class Source:
 
 
 source = Source()
+playback = Playback()
+source.tickers.append(playback.advance)
+source.listeners.append(playback.changed)
 
 
 def format_time(ms: int) -> str:
