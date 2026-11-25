@@ -326,6 +326,9 @@ class CanBusReceiver(_Receiver):
         self._first: float | None = None  # receiving thread
         # Why receiving stopped, kept apart from last_error, which flush() also sets
         self.bus_error: Exception | None = None
+        # Every frame seen on the bus, and its bits without stuffing, for the bus load
+        self.frames_seen = 0
+        self.bits_seen = 0
 
     @property
     def running(self) -> bool:
@@ -378,6 +381,9 @@ class CanBusReceiver(_Receiver):
 
     ## Called on the receiving thread for every frame
     def _receive(self, msg: python_can.Message) -> None:
+        if not msg.is_error_frame:
+            self.frames_seen += 1
+            self.bits_seen += (67 if msg.is_extended_id else 47) + 8 * len(msg.data)
         if msg.is_error_frame or msg.is_remote_frame:
             return
         if len(msg.data) > 8:

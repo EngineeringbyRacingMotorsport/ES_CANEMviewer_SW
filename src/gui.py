@@ -39,12 +39,23 @@ from matplotlib.figure import Figure
 POLL_MS = 200
 STATE_COLOURS = {State.OK: "lightgreen", State.WARNING: "#FFE08A", State.CRITICAL: "#FF8A80"}
 NO_DATA_COLOUR = "#E0E0E0"
-PHASE_NAMES = {
-    Phase.I: "Repòs",
-    Phase.P: "Precàrrega",
-    Phase.T: "Alta tensió activa",
-    Phase.R: "Llest per conduir",
-}
+PHASE_NAMES = {Phase.I: "INIT", Phase.P: "PRE", Phase.T: "TS", Phase.R: "R2D"}
+# TSAL light: green when the TSAL says it's safe, red when HVDB sees high voltage
+TSAL_GREEN = ("TSALGreen", "TpINTled")
+TSAL_RED = ("HVDB", "DpTHRhv")
+TSAL_COLOURS = {"green": STATE_COLOURS[State.OK], "red": STATE_COLOURS[State.CRITICAL], "off": "#D0D0D0"}
+BAR_FONT = ("TkDefaultFont", 10, "bold")  # TSAL light and phase squares
+# Values shown beside the Traffic light grid, as (message, signal)
+KEY_VALUES = [
+    ("FrontECU_M2", "FpDIGvel"),
+    ("FrontECU_M1", "FpDIGRpot"),
+    ("FrontECU_M1", "FpDIGLpot"),
+    ("FrontECU_M1", "FpANLbrake"),
+    ("IMD_Info_Voltage", "imdHVsystvolt"),
+    ("IMD_Info_IsolationDetail", "imdRisooriginal"),
+    ("InverterTX", "iRPM"),
+    ("InverterTX", "iTmot"),
+]
 
 ICONS_DIR = Path(__file__).parent / "icons"
 SCHEMA_PATH = "EMXCAN.json"
@@ -80,11 +91,6 @@ def load_svg(name: str, width: int) -> tk.PhotoImage:
 def build_trafficlight(parent_frame, signals):
     """Crea els elements visuals del Traffic Light una sola vegada."""
     schema = unwrap(get_schema())
-    # Every signal's state depends on the phase, so it's shown above both views
-    phase_label = ttk.Label(parent_frame, font=("TkDefaultFont", 11, "bold"), padding=(5, 2))
-    phase_label.pack(side="top", anchor="w")
-    # Packed before the grid and the node view, so it keeps its place at the bottom
-    build_timeline(parent_frame)
     grid_view = ttk.Frame(parent_frame)
     grid_view.pack(fill="both", expand=True)
     node_view: dict[str, Callable[[], None]] = {}  # "refresh" / "close" of the open node, if any
@@ -125,18 +131,13 @@ def build_trafficlight(parent_frame, signals):
 
     def refresh() -> None:
         """Colours each signal by its state at the time shown, in that time's phase"""
-        current = get_phase(view_time)
-        text = f"Fase: {current.name} · {PHASE_NAMES[current]}" if current else "Fase: —"
-        if view_time is not None:
-            # Not live, so the moment shown is part of it
-            text += f" · {format_time(view_time - source.start)}"
-        phase_label["text"] = text
-        phase = current or Phase.I
+        phase = get_phase(view_time) or Phase.I
         for message, message_labels in labels.items():
             states = get_latest_state(phase, message, view_time)
             for signal, label in message_labels.items():
                 state = states.get(signal)
                 label.configure(background=STATE_COLOURS[state[1]] if state else NO_DATA_COLOUR)
+        refresh_values()
         if "refresh" in node_view:
             node_view["refresh"]()
 
@@ -165,12 +166,24 @@ def build_trafficlight(parent_frame, signals):
 
     notebook.bind("<Button-1>", on_tab_click, add="+")
 
-    tsal_status = ttk.Frame(grid_view, height=50, borderwidth=2, relief="ridge")
-    tsal_status.pack(pady=5, padx=5, anchor="nw", side="left", expand=True, fill="x")
-    ttk.Label(tsal_status, text="TSAL LIGHT", font=("TkDefaultFont", 12, "bold"), background="#FFCCCB", anchor="center", padding=(0,5)).pack(side="top", expand=True, fill="both")
+    # Key values beside the grid, at the time shown
+    values_frame = ttk.Frame(grid_view, borderwidth=2, relief="ridge", padding=(8, 4))
+    values_frame.pack(pady=5, padx=5, anchor="nw", side="left")
+    value_labels: dict[tuple[str, str], ttk.Label] = {}
+    for message, name in KEY_VALUES:
+        ttk.Label(values_frame, text=name, font=("TkDefaultFont", 9), foreground="#707070").pack(anchor="w", pady=(4, 0))
+        value_labels[(message, name)] = ttk.Label(values_frame, font=("TkDefaultFont", 12, "bold"), width=11)
+        value_labels[(message, name)].pack(anchor="w")
 
-    scs_signals = ttk.Frame(grid_view, height=50, borderwidth=2, relief="ridge")
-    scs_signals.pack(pady=5, padx=5, anchor="w", side="bottom", expand=True, fill="x")
+    def refresh_values() -> None:
+        for (message, name), label in value_labels.items():
+            sample = get_last_samples(message, name, 1, view_time)
+            if not sample:
+                label["text"] = "—"
+                continue
+            value = sample[0][1]
+            unit = schema.Messages[message].Signals[name].Unit
+            label["text"] = f"{value if isinstance(value, int) else f'{value:.1f}'} {unit or ''}".strip()
 
     refresh()
     return refresh
@@ -420,10 +433,10 @@ def parse_time(text: str) -> int | None:
 
 
 def build_timeline(parent_frame) -> None:
-    """Datalogger timeline: every page shows the moment it's set to, and every
-    timeline shows the same one. Greyed out in other modes."""
+    """Datalogger timeline: every page shows the moment it's set to. Greyed out
+    without a file."""
     bar = ttk.Frame(parent_frame)
-    bar.pack(side="bottom", fill="x", padx=5, pady=(0, 5))
+    bar.pack(fill="x")
     start_button = ttk.Button(bar, text="⏮", width=3, cursor="hand2", command=lambda: playback.seek(source.start))
     start_button.pack(side="left")
     play_button = ttk.Button(bar, text="▶", width=3, cursor="hand2", command=lambda: playback.play(not playback.playing))
@@ -433,11 +446,7 @@ def build_timeline(parent_frame) -> None:
     speed.pack(side="left")
     speed.bind("<<ComboboxSelected>>", lambda _: playback.set_speed(speed.get()))
 
-    # Right: the editable current time, the total, and the phase colours
-    legend = ttk.Frame(bar)
-    legend.pack(side="right", padx=(10, 0))
-    for phase, colour in PHASE_COLOURS.items():
-        tk.Label(legend, text=phase.name, background=colour, width=2).pack(side="left", padx=1)
+    # Right: the editable current time and the total
     total = ttk.Label(bar, text="/ --:--.-", width=9)
     total.pack(side="right")
     entry = ttk.Entry(bar, width=8, justify="right")
@@ -584,9 +593,7 @@ def build_grafics(parent_frame, signals: dict[str, dict[str, list[str]]]) -> Cal
 
     top = ttk.Frame(parent_frame)
     top.pack(fill="x", padx=5, pady=5)
-    # Packed before the graphs, so it keeps its place at the bottom
-    build_timeline(parent_frame)
-    left = ttk.Frame(parent_frame)
+    left =ttk.Frame(parent_frame)
     left.pack(side="left", fill="y", padx=5, pady=(0, 5))
     area = ttk.Frame(parent_frame)
     area.pack(side="left", fill="both", expand=True, padx=(0, 5), pady=(0, 5))
@@ -709,6 +716,8 @@ class Source:
         self.start = 0  # Datalogger: first and last frame (ms)
         self.end = 0
         self.restarts: list[int] = []  # Datalogger: where the logger's clock restarted
+        self.receiver: CanBusReceiver | None = None  # CAN: while connected
+        self.bitrate: int | None = None  # CAN: as configured, None if left empty
         self.listeners: list[Callable[[], None]] = []  # told when the source changes
         self.tickers: list[Callable[[], None]] = []  # run on every tick
 
@@ -736,6 +745,95 @@ def format_time(ms: int) -> str:
     # Rounded to tenths first, so 59.97 s shows as 01:00.0, not 00:60.0
     minutes, tenths = divmod(round(ms / 100), 600)
     return f"{minutes:02d}:{tenths / 10:04.1f}"
+
+
+def tsal_colour(green: bool, red: bool, flash: bool) -> str:
+    """TSAL light colour: red flashes, both alternate; `flash` flips every refresh"""
+    if green and red:
+        return TSAL_COLOURS["green" if flash else "red"]
+    if red:
+        return TSAL_COLOURS["red" if flash else "off"]
+    return TSAL_COLOURS["green" if green else "off"]
+
+
+def bus_text(samples: list[tuple[float, int, int]]) -> str:
+    """Bus load and frames/s between the oldest and newest (time s, frames, bits)"""
+    if source.receiver is None:
+        return "CAN desconnectat"
+    (t0, frames0, bits0), (t1, frames1, bits1) = samples[0], samples[-1]
+    if t1 - t0 < 0.5:
+        return "Càrrega: … · … trames/s"
+    rate = (frames1 - frames0) / (t1 - t0)
+    load = (
+        f"Càrrega {100 * (bits1 - bits0) / (t1 - t0) / source.bitrate:.0f} %"
+        if source.bitrate
+        else "Càrrega: — (indica el bitrate)"
+    )
+    return f"{load} · {rate:,.0f} trames/s".replace(",", " ")
+
+
+def build_bottom_bar(parent_frame) -> Callable[[], None]:
+    """Bar under every Visualitzar page: the timeline (Datalogger) or the bus
+    (CAN) on the left; the TSAL light and the phases on the right"""
+    bar = ttk.Frame(parent_frame)
+    bar.pack(side="bottom", fill="x", padx=5, pady=(0, 5))
+
+    right = ttk.Frame(bar)
+    right.pack(side="right", padx=(10, 0))
+    tsal = tk.Label(right, text="TSAL LIGHT", font=BAR_FONT, foreground="black",
+                    highlightthickness=1, highlightbackground="#A0A0A0")
+    tsal.grid(row=0, column=0, columnspan=len(Phase), sticky="ew", padx=2, pady=(0, 3))
+    squares: dict[Phase, tk.Label] = {}
+    for column, phase in enumerate(Phase):
+        square = tk.Label(right, text=PHASE_NAMES[phase], font=BAR_FONT, width=6, pady=6, borderwidth=1)
+        square.grid(row=1, column=column, padx=2)
+        squares[phase] = square
+
+    left = ttk.Frame(bar)
+    left.pack(side="left", fill="both", expand=True)
+    timeline = ttk.Frame(left)
+    build_timeline(timeline)
+    bus = ttk.Label(left, font=("TkDefaultFont", 12, "bold"), anchor="w")
+    samples: list[tuple[float, int, int]] = []  # last second of (time s, frames, bits)
+    flash = [False]
+
+    def show_mode() -> None:
+        samples.clear()
+        if source.kind == "CAN":
+            timeline.pack_forget()
+            bus.pack(fill="both", expand=True, padx=5)
+        else:
+            bus.pack_forget()
+            timeline.pack(fill="x", expand=True, anchor="s")
+
+    def refresh() -> None:
+        now = time.monotonic()
+        if source.kind == "CAN":
+            r = source.receiver
+            if r is not None:
+                samples.append((now, r.frames_seen, r.bits_seen))
+                while now - samples[0][0] > 1.0:
+                    samples.pop(0)
+            bus["text"] = bus_text(samples)
+
+        current = get_phase(view_time)
+        for phase, square in squares.items():
+            on = phase == current
+            square.configure(
+                background=PHASE_COLOURS[phase] if on else "#F5F5F5",
+                foreground="black" if on else "#A0A0A0",
+                relief="solid" if on else "ridge",
+            )
+        green, red = (get_last_samples(*signal, 1, view_time) for signal in (TSAL_GREEN, TSAL_RED))
+        # Flipped on every refresh, i.e. every 200 ms of the app's timer (5 Hz)
+        flash[0] = not flash[0]
+        colour = tsal_colour(bool(green and green[0][1] == 1), bool(red and red[0][1] == 1), flash[0])
+        tsal.configure(background=colour)
+
+    source.listeners.append(show_mode)
+    show_mode()
+    refresh()
+    return refresh
 
 
 def get_frame_count(conn: sqlite3.Connection) -> int:
@@ -934,6 +1032,7 @@ def build_sources(parent_frame):
         receiver = r
         error["text"] = ""
         set_connected(True)
+        source.receiver, source.bitrate = r, int(text) if text else None
         source.opened("CAN", adapter.get())
         file_label["text"] = "Cap fitxer obert"
         file_status["text"] = ""
@@ -943,6 +1042,7 @@ def build_sources(parent_frame):
         if receiver is None:
             return
         r, receiver = receiver, None
+        source.receiver = None
         set_connected(False)
         try:
             r.stop()
@@ -1027,6 +1127,9 @@ def create_app():
     for menu_title, submenus in mainmenu.items():
         primary_frame = ttk.Frame(primary_notebook)
         primary_notebook.add(primary_frame, text=menu_title)
+        if menu_title == "Visualitzar":
+            # Packed before the tabs, so it stays under every page of the menu
+            refresh_bottom_bar = build_bottom_bar(primary_frame)
 
         secondary_notebook = ttk.Notebook(primary_frame)
         secondary_notebook.pack(fill="both", expand=True, padx=5, pady=5)
@@ -1046,6 +1149,7 @@ def create_app():
                 build_temperatures(sub_frame, dict_signals)
 
     def refresh_pages() -> None:
+        refresh_bottom_bar()
         refresh_trafficlight()
         refresh_grafics()
 
