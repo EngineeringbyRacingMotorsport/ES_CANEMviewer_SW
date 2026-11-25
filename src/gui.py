@@ -1,11 +1,23 @@
 from datetime import datetime
 from pathlib import Path
+import os
+import sqlite3
 import time
 
 import tkinter as tk
 import ttkbootstrap as ttk
-from .can import DRIVERS, CanBusReceiver, detect_channels, supported_interfaces
-from .schema import Schema, Signal, get_all, get_schema, new_connection, set_connection
+from tkinter import filedialog, messagebox
+from .can import DRIVERS, CanBusReceiver, Loaded, detect_channels, read_recording, supported_interfaces
+from .schema import (
+    Schema,
+    Signal,
+    get_all,
+    get_schema,
+    load_database,
+    new_connection,
+    quote_ident,
+    set_connection,
+)
 from .state import (
     Phase,
     State,
@@ -13,6 +25,7 @@ from .state import (
     get_latest_state,
     get_latest_times,
     get_newest_time,
+    get_oldest_time,
     get_phase,
     get_samples_between,
 )
@@ -108,12 +121,16 @@ def build_trafficlight(parent_frame, signals):
                     clickable(widget, lambda board=board, message=message, signal=signal: open_node(board, (message, signal)))
 
     def refresh() -> None:
-        """Colours each signal by its latest state in the current phase"""
-        current = get_phase()
-        phase_label["text"] = f"Fase: {current.name} · {PHASE_NAMES[current]}" if current else "Fase: —"
+        """Colours each signal by its state at the time shown, in that time's phase"""
+        current = get_phase(view_time)
+        text = f"Fase: {current.name} · {PHASE_NAMES[current]}" if current else "Fase: —"
+        if view_time is not None:
+            # Not live, so the moment shown is part of it
+            text += f" · {format_time(view_time - source.start)}"
+        phase_label["text"] = text
         phase = current or Phase.I
         for message, message_labels in labels.items():
-            states = get_latest_state(phase, message)
+            states = get_latest_state(phase, message, view_time)
             for signal, label in message_labels.items():
                 state = states.get(signal)
                 label.configure(background=STATE_COLOURS[state[1]] if state else NO_DATA_COLOUR)
@@ -241,7 +258,7 @@ def build_node_view(
             limit = min(5000, max(1, int(count.get())))
         except ValueError:
             limit = 200
-        samples = get_last_samples(message, signal, limit)
+        samples = get_last_samples(message, signal, limit, view_time)
         line.set_data([t / 1000 for t, _ in samples], [v for _, v in samples])
         unit = schema.Messages[message].Signals[signal].Unit
         axes.set_title(signal)
@@ -252,12 +269,12 @@ def build_node_view(
         canvas.draw_idle()
 
     def refresh() -> None:
-        phase = get_phase() or Phase.I
-        newest = get_newest_time()
+        phase = get_phase(view_time) or Phase.I
+        newest = current_time()
         for message, tree in tables.items():
             signals = schema.Messages[message].Signals
-            states = get_latest_state(phase, message)
-            times = get_latest_times(message)
+            states = get_latest_state(phase, message, view_time)
+            times = get_latest_times(message, view_time)
             for signal in tree.get_children():
                 unit = signals[signal].Unit
                 if signal in states and newest is not None:
@@ -382,6 +399,110 @@ class Graph:
         self.canvas.draw()
 
 
+PLAYBACK_SPEEDS = ("0.5×", "1×", "2×", "5×", "10×")
+
+
+def build_timeline(parent_frame) -> None:
+    """Datalogger timeline: every page shows the moment it's set to. Greyed out
+    in other modes."""
+    bar = ttk.Frame(parent_frame)
+    bar.pack(side="bottom", fill="x", padx=5, pady=(0, 5))
+    start_button = ttk.Button(bar, text="⏮", width=3, cursor="hand2")
+    start_button.pack(side="left")
+    play_button = ttk.Button(bar, text="▶", width=3, cursor="hand2")
+    play_button.pack(side="left", padx=5)
+    speed = ttk.Combobox(bar, values=PLAYBACK_SPEEDS, state="readonly", width=5)
+    speed.set("1×")
+    speed.pack(side="left")
+    time_label = ttk.Label(bar, text="--:--.- / --:--.-", width=18, anchor="e")
+    time_label.pack(side="right", padx=(10, 0))
+    track = ttk.Frame(bar)
+    track.pack(side="left", fill="x", expand=True, padx=10)
+    # Where the logger's clock restarted, as marks over the slider
+    marks = tk.Canvas(track, height=6, highlightthickness=0)
+    marks.pack(fill="x")
+    slider = ttk.Scale(track, from_=0, to=1)
+    slider.pack(fill="x")
+
+    playing = [False]
+    last_tick = [0.0]  # monotonic time of the last step forward
+    moving = [False]  # the slider is being set by the code, not dragged
+
+    def show() -> None:
+        """Puts the slider, the time and the buttons where view_time is"""
+        active = source.kind == "Datalogger"
+        for widget in (start_button, play_button, slider):
+            widget.configure(state="normal" if active else "disabled")
+        speed.configure(state="readonly" if active else "disabled")
+        play_button.configure(text="⏸" if playing[0] else "▶")
+        if not active or view_time is None:
+            time_label["text"] = "--:--.- / --:--.-"
+            return
+        moving[0] = True
+        slider.configure(from_=source.start, to=max(source.end, source.start + 1))
+        slider.set(view_time)
+        moving[0] = False
+        time_label["text"] = f"{format_time(view_time - source.start)} / {format_time(source.end - source.start)}"
+
+    def draw_marks(*_: object) -> None:
+        marks.delete("all")
+        width = marks.winfo_width()
+        length = max(source.end - source.start, 1)
+        if source.kind != "Datalogger":
+            return
+        for restart in source.restarts:
+            x = (restart - source.start) / length * width
+            marks.create_line(x, 0, x, 6, fill="red", width=2)
+
+    def set_playing(on: bool) -> None:
+        global view_time
+        if on and view_time is not None and view_time >= source.end:
+            view_time = source.start  # playing again from the end starts over
+        playing[0] = on
+        last_tick[0] = time.monotonic()
+        show()
+
+    def to_start() -> None:
+        global view_time
+        view_time = source.start
+        show()
+
+    def dragged(value: str) -> None:
+        global view_time
+        if not moving[0] and source.kind == "Datalogger":
+            view_time = int(float(value))
+            show()
+
+    def advance() -> None:
+        """Moves the time on while playing; run by the app's timer"""
+        global view_time
+        if not playing[0] or source.kind != "Datalogger" or view_time is None:
+            return
+        now = time.monotonic()
+        factor = float(speed.get().rstrip("×"))
+        view_time = min(source.end, view_time + int((now - last_tick[0]) * 1000 * factor))
+        last_tick[0] = now
+        if view_time >= source.end:
+            playing[0] = False  # stops at the end
+        show()
+
+    def changed() -> None:
+        playing[0] = False
+        show()
+        draw_marks()
+
+    start_button.configure(command=to_start)
+    play_button.configure(command=lambda: set_playing(not playing[0]))
+    slider.configure(command=dragged)
+    # A click on the track jumps there, as in a video player, instead of Tk's
+    # default single step; the slider is then under the mouse, so it drags on
+    slider.bind("<ButtonPress-1>", lambda e: slider.set(slider.get(e.x, e.y)) if source.kind == "Datalogger" else None)
+    marks.bind("<Configure>", draw_marks)
+    source.tickers.append(advance)
+    source.listeners.append(changed)
+    show()
+
+
 def build_grafics(parent_frame, signals: dict[str, dict[str, list[str]]]) -> Callable[[], None]:
     """Fins a 4 gràfics amb els senyals triats a l'arbre de l'esquerra.
     Returns the function that redraws them."""
@@ -389,6 +510,8 @@ def build_grafics(parent_frame, signals: dict[str, dict[str, list[str]]]) -> Cal
 
     top = ttk.Frame(parent_frame)
     top.pack(fill="x", padx=5, pady=5)
+    # Packed before the graphs, so it keeps its place at the bottom
+    build_timeline(parent_frame)
     left = ttk.Frame(parent_frame)
     left.pack(side="left", fill="y", padx=5, pady=(0, 5))
     area = ttk.Frame(parent_frame)
@@ -502,15 +625,86 @@ def build_grafics(parent_frame, signals: dict[str, dict[str, list[str]]]) -> Cal
     return refresh
 
 
-def build_connect(parent_frame, on_data: Callable[[], None]):
-    """Connexió en directe a un adaptador CAN; les trames es desen a la base de dades
-    i on_data() actualitza el que es mostra."""
-    frame = ttk.Frame(parent_frame, padding=10, borderwidth=2, relief="ridge")
-    frame.pack(pady=20, padx=20, anchor="nw")
+class Source:
+    """The data being shown: a datalogger file, or frames from a CAN adapter.
+    Pages read `view_time`; the app's timer runs the tickers."""
 
+    def __init__(self) -> None:
+        self.kind: str | None = None  # "Datalogger" or "CAN"
+        self.name = ""  # file name, or adapter
+        self.start = 0  # Datalogger: first and last frame (ms)
+        self.end = 0
+        self.restarts: list[int] = []  # Datalogger: where the logger's clock restarted
+        self.listeners: list[Callable[[], None]] = []  # told when the source changes
+        self.tickers: list[Callable[[], None]] = []  # run on every tick
+
+    def opened(self, kind: str | None, name: str = "", restarts: list[int] | None = None) -> None:
+        global view_time
+        self.kind, self.name, self.restarts = kind, name, restarts or []
+        self.start, self.end = get_oldest_time() or 0, get_newest_time() or 0
+        # A file starts at its beginning; live data always shows the newest
+        view_time = self.start if kind == "Datalogger" else None
+        for listener in self.listeners:
+            listener()
+
+    def label(self) -> str:
+        return f"{self.kind}: {self.name}" if self.kind else "Sense dades"
+
+
+source = Source()
+
+
+def format_time(ms: int) -> str:
+    """mm:ss.s"""
+    # Rounded to tenths first, so 59.97 s shows as 01:00.0, not 00:60.0
+    minutes, tenths = divmod(round(ms / 100), 600)
+    return f"{minutes:02d}:{tenths / 10:04.1f}"
+
+
+def get_frame_count(conn: sqlite3.Connection) -> int:
+    schema = unwrap(get_schema())
+    return sum(conn.execute(f"SELECT COUNT(*) FROM {quote_ident(m)}").fetchone()[0] for m in schema.Messages)
+
+
+RECORDING_TYPES = [
+    ("Gravacions", "*.cpf *.sqlite *.blf *.asc *.trc *.log"),
+    ("Fitxers del datalogger", "*.cpf"),
+    ("Bases de dades desades", "*.sqlite"),
+    ("Registres CAN", "*.blf *.asc *.trc *.log"),
+]
+
+
+def build_sources(parent_frame):
+    """Font de dades: un fitxer del datalogger o un adaptador CAN (UDP, més endavant)"""
+    choice = tk.StringVar(value="Datalogger")
+    choices = ttk.Frame(parent_frame)
+    choices.pack(anchor="nw", padx=20, pady=(20, 0))
+    panels: dict[str, ttk.Frame] = {}
+    for kind in ("Datalogger", "CAN", "UDP"):
+        ttk.Radiobutton(choices, text=kind, value=kind, variable=choice, command=lambda: show_panel(),
+                        state="disabled" if kind == "UDP" else "normal").pack(side="left", padx=(0, 20))
+        panels[kind] = ttk.Frame(parent_frame, padding=10, borderwidth=2, relief="ridge")
+
+    def show_panel() -> None:
+        for panel in panels.values():
+            panel.pack_forget()
+        panels[choice.get()].pack(pady=10, padx=20, anchor="nw")
+
+    # Datalogger
+    datalogger = panels["Datalogger"]
+    open_button = ttk.Button(datalogger, text="Obrir fitxer…", cursor="hand2")
+    open_button.grid(row=0, column=0, sticky="w")
+    file_label = ttk.Label(datalogger, text="Cap fitxer obert")
+    file_label.grid(row=0, column=1, sticky="w", padx=10)
+    file_status = ttk.Label(datalogger, text="", wraplength=700)
+    file_status.grid(row=1, column=0, columnspan=2, sticky="w", pady=(8, 0))
+    file_error = ttk.Label(datalogger, text="", bootstyle="danger", wraplength=700)
+    file_error.grid(row=2, column=0, columnspan=2, sticky="w")
+
+    # CAN
+    frame = panels["CAN"]
     channels: list[AutoDetectedConfig] = []
     receiver: CanBusReceiver | None = None
-    job: str | None = None  # pending poll() timer
 
     ttk.Label(frame, text="Adaptador:").grid(row=0, column=0, sticky="w", pady=4)
     adapter = ttk.Combobox(frame, state="readonly", width=30)
@@ -536,6 +730,60 @@ def build_connect(parent_frame, on_data: Callable[[], None]):
     status.grid(row=3, column=0, columnspan=3, sticky="w")
     error = ttk.Label(frame, text="", bootstyle="danger", wraplength=600)
     error.grid(row=4, column=0, columnspan=3, sticky="w")
+
+    ttk.Label(panels["UDP"], text="Encara no disponible").pack(anchor="w")
+
+    def open_file(path: str | None = None) -> None:
+        path = path or filedialog.askopenfilename(parent=parent_frame, filetypes=RECORDING_TYPES)
+        if not path:
+            return
+        name = os.path.basename(path)
+        if receiver is not None:
+            if not messagebox.askyesno(
+                "Obrir fitxer",
+                "Obrir un fitxer desconnecta l'adaptador CAN, i les dades rebudes no es desen. Vols continuar?",
+                parent=parent_frame,
+            ):
+                return
+            disconnect()
+        root.configure(cursor="watch")
+        root.update_idletasks()
+        conn = None
+        try:
+            if os.path.splitext(path)[1].lower() == ".sqlite":
+                conn = load_database(path)
+                loaded = Loaded(get_frame_count(conn), 0, [], None)
+            else:
+                conn = new_connection()
+                loaded = read_recording(path, conn)
+        except Exception as e:
+            if conn is not None:
+                conn.close()
+            file_error["text"] = f"No s'ha pogut obrir {name}: {e}"
+            return
+        finally:
+            root.configure(cursor="")
+        if loaded.frames == 0:
+            conn.close()
+            file_error["text"] = f"{name} no té cap trama dels missatges coneguts"
+            return
+
+        # The data shown until now is only replaced once the file has loaded
+        set_connection(conn)
+        source.opened("Datalogger", name, loaded.restarts)
+        file_label["text"] = path
+        file_error["text"] = ""
+        notes = [f"{loaded.frames} trames, {format_time(source.end - source.start)}"]
+        if loaded.skipped:
+            notes.append(f"{loaded.skipped} trames descartades (missatges desconeguts o que no es poden descodificar)")
+        if loaded.restarts:
+            notes.append(
+                f"el rellotge del datalogger s'ha reiniciat {len(loaded.restarts)} cop(s), a "
+                + ", ".join(format_time(t - source.start) for t in loaded.restarts)
+            )
+        if loaded.stopped:
+            notes.append(f"el fitxer s'acaba abans d'hora ({loaded.stopped}); es mostra fins aquí")
+        file_status["text"] = " · ".join(notes)
 
     def counts(r: CanBusReceiver) -> str:
         return f"{r.received} trames desades · {r.dropped} descartades"
@@ -609,13 +857,12 @@ def build_connect(parent_frame, on_data: Callable[[], None]):
         receiver = r
         error["text"] = ""
         set_connected(True)
-        poll()
+        source.opened("CAN", adapter.get())
+        file_label["text"] = "Cap fitxer obert"
+        file_status["text"] = ""
 
     def disconnect(message: str = "") -> None:
-        nonlocal receiver, job
-        if job is not None:
-            frame.after_cancel(job)
-            job = None
+        nonlocal receiver
         if receiver is None:
             return
         r, receiver = receiver, None
@@ -628,19 +875,16 @@ def build_connect(parent_frame, on_data: Callable[[], None]):
         try:
             while r.pending:
                 r.flush()
-            on_data()
         finally:
             status["text"] = f"Desconnectat · {counts(r)}"
             error["text"] = message
 
     def poll() -> None:
-        nonlocal job
-        job = None
+        """Stores what the adapter received; run by the app's timer"""
         if receiver is None:
             return
         try:
             receiver.flush()
-            on_data()
         except Exception as e:
             # Stop rather than keep receiving with nothing storing the frames
             disconnect(f"Error: {e}")
@@ -648,9 +892,7 @@ def build_connect(parent_frame, on_data: Callable[[], None]):
         status["text"] = f"Connectat · {counts(receiver)}"
         if receiver.last_error is not None:
             error["text"] = f"Últim error: {receiver.last_error}"
-        if receiver.running:
-            job = frame.after(POLL_MS, poll)
-        else:
+        if not receiver.running:
             disconnect(f"Adaptador perdut: {receiver.bus_error}")
 
     def on_close() -> None:
@@ -659,14 +901,19 @@ def build_connect(parent_frame, on_data: Callable[[], None]):
         finally:
             root.destroy()
 
+    open_button.configure(command=open_file)
     detect_button.configure(command=detect)
     connect_button.configure(command=connect)
     disconnect_button.configure(command=disconnect)
-    root = frame.winfo_toplevel()
+    source.tickers.append(poll)
+    root = parent_frame.winfo_toplevel()
     root.protocol("WM_DELETE_WINDOW", on_close)
     # macOS's Quit (Cmd+Q) doesn't go through WM_DELETE_WINDOW
     root.createcommand("::tk::mac::Quit", on_close)
+    show_panel()
     detect()
+    return open_file
+
 
 def build_temperatures(parent_frame, signals):
     """Crea els elements visuals del Temperatures una sola vegada."""
@@ -690,11 +937,14 @@ def create_app():
     # Estructura de navegació
     mainmenu = {
         "Visualitzar": ("Traffic light", "Gràfics", "BMS", "SDC", "Dinàmica","Temperatures"),
-        "Configuració": ("Connectar", "Editar fitxers"),
+        "Configuració": ("Font de dades", "Editar fitxers"),
     }
 
     primary_notebook = ttk.Notebook(root, padding=0)
     primary_notebook.pack(fill="both", expand=True, padx=10, pady=10)
+    # The data being shown, in the corner next to the menus
+    source_label = ttk.Label(root, font=("TkDefaultFont", 10, "bold"))
+    source_label.place(relx=1.0, x=-20, y=14, anchor="ne")
 
     # Construcció dinàmica del menú i submenús
     for menu_title, submenus in mainmenu.items():
@@ -713,11 +963,36 @@ def create_app():
                 refresh_trafficlight = build_trafficlight(sub_frame, dict_signals)
             if sub_title == "Gràfics":
                 refresh_grafics = build_grafics(sub_frame, dict_signals)
-            if sub_title == "Connectar":
-                # "Visualitzar" is built first, so its pages already exist
-                build_connect(sub_frame, lambda: (refresh_trafficlight(), refresh_grafics()))
+            if sub_title == "Font de dades":
+                build_sources(sub_frame)
             if sub_title == "Temperatures":
                 build_temperatures(sub_frame, dict_signals)
+
+    def refresh_pages() -> None:
+        refresh_trafficlight()
+        refresh_grafics()
+
+    def show_source() -> None:
+        source_label["text"] = source.label()
+        refresh_pages()
+
+    # One timer for the whole app: it stores what the adapter received, moves
+    # the timeline on while playing, then every page shows the time reached
+    def tick() -> None:
+        for ticker in source.tickers:
+            try:
+                ticker()
+            except Exception as e:
+                print(f"Error: {e}")
+        try:
+            refresh_pages()
+        except Exception as e:
+            print(f"Error: {e}")
+        root.after(POLL_MS, tick)
+
+    source.listeners.append(show_source)
+    show_source()
+    tick()
     return root
 
 
